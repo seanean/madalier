@@ -166,6 +166,82 @@ function renderCy() {
     cy.on('free','node[type = "attribute"]', (evt) => {
         evt.target.grabify();
     });
+
+    initWorkspaceResize();
+}
+
+function initWorkspaceResize() {
+    const workspace = document.querySelector('.app-workspace');
+    const splitter = document.querySelector('.splitter');
+    const details = document.querySelector('.details-pane');
+    const diagramPanel = document.querySelector('.diagram-panel');
+    if (!workspace || !splitter || !details || !diagramPanel) return;
+
+    let dragStartX = 0;
+    let dragStartWidth = 0;
+    let dragging = false;
+
+    function clampDetailsWidth(w) {
+        const splitterW = splitter.offsetWidth;
+        const maxW = Math.min(workspace.clientWidth * 0.8, 900);
+        const minDiagram = 160;
+        const maxByWorkspace = workspace.clientWidth - splitterW - minDiagram;
+        const cap = Math.min(maxW, maxByWorkspace);
+        const lo = Math.min(120, cap);
+        return Math.min(Math.max(w, lo), cap);
+    }
+
+    function setDetailsWidth(px) {
+        const w = clampDetailsWidth(px);
+        details.style.width = `${w}px`;
+        if (cy) cy.resize();
+    }
+
+    splitter.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        dragging = true;
+        dragStartX = e.clientX;
+        dragStartWidth = details.getBoundingClientRect().width;
+        splitter.setPointerCapture(e.pointerId);
+    });
+
+    splitter.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = dragStartX - e.clientX;
+        setDetailsWidth(dragStartWidth + dx);
+    });
+
+    function endDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        if (e.pointerId != null) {
+            try {
+                splitter.releasePointerCapture(e.pointerId);
+            } catch {
+                /* ignore */
+            }
+        }
+    }
+
+    splitter.addEventListener('pointerup', endDrag);
+    splitter.addEventListener('pointercancel', endDrag);
+
+    splitter.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 40 : 10;
+        const w = details.getBoundingClientRect().width;
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setDetailsWidth(w + step);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setDetailsWidth(w - step);
+        }
+    });
+
+    const ro = new ResizeObserver(() => {
+        if (cy) cy.resize();
+    });
+    ro.observe(diagramPanel);
 }
 
 function cyPositionAttributes(ent){

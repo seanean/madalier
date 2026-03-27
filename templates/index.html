@@ -5,6 +5,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title> Madalier </title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .app-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #ccc;
+            background: #f5f5f5;
+        }
+
+        .app-header button {
+            padding: 0.35rem 0.65rem;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .app-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .app-workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .diagram-panel {
+            flex: 1;
+            min-width: 0;
+            min-height: 0;
+            position: relative;
+        }
+
+        #cy {
+            width: 100%;
+            height: 100%;
+        }
+
+        .splitter {
+            flex-shrink: 0;
+            width: 6px;
+            cursor: col-resize;
+            background: #e0e0e0;
+            border-left: 1px solid #ccc;
+            border-right: 1px solid #ccc;
+        }
+
+        .splitter:hover,
+        .splitter:focus-visible {
+            background: #d0d0d0;
+        }
+
+        .details-pane {
+            flex-shrink: 0;
+            width: 300px;
+            min-width: 120px;
+            max-width: min(80vw, 900px);
+            overflow: auto;
+            background: #fafafa;
+            border-left: 1px solid #ccc;
+            padding: 0.75rem;
+            box-sizing: border-box;
+        }
+
+        .details-pane h2 {
+            margin: 0 0 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+    </style>
     <script src="../static/cytoscape.min.js"></script>
     <script src="../static/dagre.min.js"></script>
     <script src="../static/cytoscape-dagre.min.js"></script>
@@ -12,8 +96,29 @@
 </head>
 
 <body>
-    poopy doody butt
-    <div id="cy" style="width: 500px; height: 500px;"></div>
+    <header class="app-header" role="banner">
+        <button type="button">New model</button>
+        <button type="button">Open model</button>
+        <button type="button">Save model</button>
+        <button type="button">Add entity</button>
+        <button type="button">Add attribute</button>
+        <button type="button">Add relationship</button>
+        <button type="button">Export diagram</button>
+        <button type="button">Export DDL</button>
+        <button type="button">Export CSV</button>
+    </header>
+    <main class="app-main">
+        <div class="app-workspace">
+            <div class="diagram-panel">
+                <div id="cy"></div>
+            </div>
+            <div class="splitter" role="separator" aria-orientation="vertical"
+                aria-label="Resize details panel" tabindex="0"></div>
+            <aside class="details-pane" aria-label="Details">
+                <h2>Details</h2>
+            </aside>
+        </div>
+    </main>
 </body>
 
 </html>

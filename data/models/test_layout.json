@@ -2,13 +2,13 @@
     "layout": [
         {
             "entity_id": "entity-uuid-1",
-            "x_coord": 0,
-            "y_coord": 63.75
+            "x_coord": -5.684341886080802e-14,
+            "y_coord": 76.5
         },
         {
             "entity_id": "entity-uuid-2",
-            "x_coord": 352.0334470875393,
-            "y_coord": 337.2289225378813
+            "x_coord": 375.4809402496291,
+            "y_coord": 392.0382889904938
         }
     ]
 }
