@@ -20,7 +20,8 @@
           "data_type": "STRING",
           "key_type": null,
           "definition": "sample string",
-          "source_mapping": "something.there"
+          "source_mapping": "something.there",
+          "attribute_order": 1
         },
         {
           "attribute_id": "att-uuid-2",
@@ -31,7 +32,8 @@
           "scale": 11,
           "key_type": null,
           "definition": "sample string",
-          "source_mapping": "something.here"
+          "source_mapping": "something.here",
+          "attribute_order": 2
         }
       ]
     },
@@ -49,7 +51,8 @@
           "data_type": "STRING",
           "key_type": null,
           "definition": "sample string",
-          "source_mapping": "something.there"
+          "source_mapping": "something.there",
+          "attribute_order": 1
         },
         {
           "attribute_id": "att-uuid-4",
@@ -60,7 +63,8 @@
           "scale": 11,
           "key_type": null,
           "definition": "sample string",
-          "source_mapping": "something.here"
+          "source_mapping": "something.here",
+          "attribute_order": 2
         }
       ]
     }

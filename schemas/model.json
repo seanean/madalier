@@ -125,6 +125,10 @@
                                 "source_mapping": {
                                     "description": "Source mapping expression for this attribute, describing where its data originates.",
                                     "type": "string"
+                                },
+                                "attribute_order": {
+                                    "description": "Order of the attribute within its entity.",
+                                    "type": "integer"
                                 }
                             },
                             "required": [
@@ -132,7 +136,8 @@
                                 "business_name",
                                 "technical_name",
                                 "data_type",
-                                "definition"
+                                "definition",
+                                "attribute_order"
                             ]
                         }
                     }
