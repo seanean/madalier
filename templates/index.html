@@ -212,7 +212,7 @@
     <header class="app-header" role="banner">
         <button type="button" id="new-model-btn">New model</button>
         <button type="button" id="open-model-btn">Open model</button>
-        <button type="button">Save model</button>
+        <button type="button" id="save-model-btn">Save model</button>
         <button type="button">Add entity</button>
         <button type="button">Add attribute</button>
         <button type="button">Add relationship</button>
@@ -250,7 +250,7 @@
             <label for="new-model-stem">File name</label>
             <input type="text" id="new-model-stem" name="stem" required autocomplete="off"
                 placeholder="e.g. customer_warehouse" pattern="[^/\\]+" maxlength="200">
-            <p class="field-hint">Saved as data/models/&lt;name&gt;.json and a matching layout file.</p>
+            <p class="field-hint">Edits use working files (temp_&lt;name&gt;) until you click Save model, which writes data/models/&lt;name&gt;.json and layouts/&lt;name&gt;.json.</p>
             <label for="new-model-display-name">Display name (optional)</label>
             <input type="text" id="new-model-display-name" name="name" autocomplete="off" maxlength="500"
                 placeholder="Defaults to file name">

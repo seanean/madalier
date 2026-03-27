@@ -1,0 +1,87 @@
+{
+  "meta": {
+    "name": "Test Model",
+    "description": "sample string",
+    "created": "2026-03-26T20:49:25.004Z",
+    "modified": "2026-03-26T20:49:25.004Z"
+  },
+  "entities": [
+    {
+      "entity_id": "entity-uuid-1",
+      "business_name": "Entity Name",
+      "technical_name": "entity_nm",
+      "entity_type": "table",
+      "definition": "entity name definition",
+      "attributes": [
+        {
+          "attribute_id": "att-uuid-1",
+          "business_name": "Column One",
+          "technical_name": "col_one",
+          "data_type": "STRING",
+          "key_type": null,
+          "definition": "sample string",
+          "source_mapping": "something.there",
+          "attribute_order": 1
+        },
+        {
+          "attribute_id": "att-uuid-2",
+          "business_name": "Column Two",
+          "technical_name": "col_two",
+          "data_type": "DECIMAL",
+          "precision": 20,
+          "scale": 11,
+          "key_type": null,
+          "definition": "sample string",
+          "source_mapping": "something.here",
+          "attribute_order": 2
+        }
+      ]
+    },
+    {
+      "entity_id": "entity-uuid-2",
+      "business_name": "Entity Name 2",
+      "technical_name": "entity_nm_2",
+      "entity_type": "table",
+      "definition": "entity name definition",
+      "attributes": [
+        {
+          "attribute_id": "att-uuid-3",
+          "business_name": "Column One",
+          "technical_name": "col_one",
+          "data_type": "STRING",
+          "key_type": null,
+          "definition": "sample string",
+          "source_mapping": "something.there",
+          "attribute_order": 1
+        },
+        {
+          "attribute_id": "att-uuid-4",
+          "business_name": "Column X",
+          "technical_name": "col_x",
+          "data_type": "DECIMAL",
+          "precision": 20,
+          "scale": 11,
+          "key_type": null,
+          "definition": "sample string",
+          "source_mapping": "something.here",
+          "attribute_order": 2
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "relationship_id": "r-uuid-1",
+      "relationship_name": "entity_nm_1.col_one 1:1 entity_nm_2.col_one",
+      "parent_entity_id": "entity-uuid-1",
+      "parent_attribute_id": "att-uuid-1",
+      "child_entity_id": "entity-uuid-2",
+      "child_attribute_id": "att-uuid-3",
+      "parent_mandatory": true,
+      "parent_cardinality": "One",
+      "child_mandatory": true,
+      "child_cardinality": "One",
+      "cardinality": "1:1"
+    }
+  ]
+}

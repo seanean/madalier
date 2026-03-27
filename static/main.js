@@ -7,9 +7,14 @@ let layout = {};
 let positions = {};
 let nodes = [];
 let edges = [];
-let currentModelStem = null;
+/** Canonical file stem (e.g. test). Edits use temp_<stem> on the server until Save. */
+let canonicalModelStem = null;
 let workspaceResizeInitialized = false;
 cy = undefined;
+
+function workingStemForCanonical(stem) {
+    return stem ? `temp_${stem}` : null;
+}
 
 async function retrieveModel(stem) {
     const res = await fetch('/api/load_model', {
@@ -43,14 +48,28 @@ async function retrieveLayout(stem) {
     }
 }
 
-async function loadModelAndRender(stem) {
-    currentModelStem = stem;
-    await retrieveModel(stem);
-    await retrieveLayout(stem);
+async function loadWorkingCopyAndRender(canonicalStem) {
+    canonicalModelStem = canonicalStem;
+    const ws = workingStemForCanonical(canonicalStem);
+    await retrieveModel(ws);
+    await retrieveLayout(ws);
     modelToNodesEdges();
     console.log('Nodes created:', nodes.length);
     console.log('Edges created:', edges.length);
     renderCy();
+}
+
+async function openCanonicalModel(canonicalStem) {
+    const res = await fetch('/api/open_model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: canonicalStem }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        throw new Error(data.error || res.statusText);
+    }
+    await loadWorkingCopyAndRender(canonicalStem);
 }
 
 async function openModel() {
@@ -80,7 +99,7 @@ async function openModel() {
             b.addEventListener('click', async () => {
                 dialog.close();
                 try {
-                    await loadModelAndRender(s);
+                    await openCanonicalModel(s);
                 } catch (e) {
                     console.error(e);
                     alert(e.message || 'Failed to load model.');
@@ -324,7 +343,8 @@ function cyPositionAttributes(ent){
 }
 
 function saveLayout() {
-    if (!currentModelStem || !cy) return;
+    if (!canonicalModelStem || !cy) return;
+    const ws = workingStemForCanonical(canonicalModelStem);
     const layout_arr = [];
     cy.nodes('[type = "entity"]').forEach(ent => {
         layout_arr.push({
@@ -334,7 +354,7 @@ function saveLayout() {
         });
     });
 
-    const q = new URLSearchParams({ model: currentModelStem });
+    const q = new URLSearchParams({ model: ws });
     fetch(`/api/save_layout?${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -440,7 +460,7 @@ async function submitNewModel(ev) {
             return;
         }
         dialog.close();
-        await loadModelAndRender(data.stem);
+        await loadWorkingCopyAndRender(data.stem);
     } catch (e) {
         console.error(e);
         alert(e.message || 'Could not create model.');
@@ -459,3 +479,31 @@ document.getElementById('open-model-btn')?.addEventListener('click', () => openM
 document.getElementById('open-model-cancel')?.addEventListener('click', () => {
     document.getElementById('open-model-dialog')?.close();
 });
+
+async function saveCanonicalModel() {
+    if (!canonicalModelStem) {
+        alert('Open or create a model first.');
+        return;
+    }
+    const btn = document.getElementById('save-model-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch('/api/save_model', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: canonicalModelStem }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            alert(data.error || res.statusText || 'Could not save model.');
+            return;
+        }
+    } catch (e) {
+        console.error(e);
+        alert(e.message || 'Could not save model.');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+document.getElementById('save-model-btn')?.addEventListener('click', () => saveCanonicalModel());
