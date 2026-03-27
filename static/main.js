@@ -148,6 +148,17 @@ function findAttributeById(id) {
     return null;
 }
 
+function findEntityContainingAttribute(attributeId) {
+    const entities = model.entities || [];
+    for (const ent of entities) {
+        const attrs = ent.attributes || [];
+        if (attrs.some((a) => a.attribute_id === attributeId)) {
+            return ent;
+        }
+    }
+    return null;
+}
+
 function patchEntityLabelInCy(entityId, businessName) {
     if (!cy) return;
     const label = businessName ?? '';
@@ -312,6 +323,36 @@ function clearPrecisionScaleUnlessDecimal(attr) {
     }
 }
 
+function sortedEntityAttributes(ent) {
+    const attrs = [...(ent.attributes || [])];
+    attrs.sort((a, b) => {
+        const oa = Number(a.attribute_order);
+        const ob = Number(b.attribute_order);
+        const na = Number.isFinite(oa) ? oa : 0;
+        const nb = Number.isFinite(ob) ? ob : 0;
+        if (na !== nb) return na - nb;
+        return String(a.attribute_id).localeCompare(String(b.attribute_id));
+    });
+    return attrs;
+}
+
+/** direction -1 = move up (earlier), +1 = move down (later). Swaps attribute_order with adjacent sibling. */
+function swapAttributeOrderWithNeighbor(attr, direction) {
+    const ent = findEntityContainingAttribute(attr.attribute_id);
+    if (!ent) return false;
+    const attrs = sortedEntityAttributes(ent);
+    const idx = attrs.findIndex((a) => a.attribute_id === attr.attribute_id);
+    if (idx < 0) return false;
+    const j = idx + direction;
+    if (j < 0 || j >= attrs.length) return false;
+    const cur = attrs[idx];
+    const other = attrs[j];
+    const tmp = cur.attribute_order;
+    cur.attribute_order = other.attribute_order;
+    other.attribute_order = tmp;
+    return true;
+}
+
 function renderAttributeDetails(attr) {
     clearPrecisionScaleUnlessDecimal(attr);
 
@@ -424,6 +465,56 @@ function renderAttributeDetails(attr) {
     });
     appendDetailsFormField(form, 'key_type', selKey);
 
+    const entForOrder = findEntityContainingAttribute(attr.attribute_id);
+    const attrsSorted = entForOrder ? sortedEntityAttributes(entForOrder) : [];
+    const orderIdx = attrsSorted.findIndex((a) => a.attribute_id === attr.attribute_id);
+
+    const orderWrap = document.createElement('div');
+    orderWrap.className = 'details-field';
+    const orderLab = document.createElement('span');
+    orderLab.className = 'details-field-label';
+    orderLab.textContent = 'attribute_order';
+    orderWrap.appendChild(orderLab);
+    const orderRow = document.createElement('div');
+    orderRow.className = 'details-order-row';
+    const orderVal = document.createElement('span');
+    orderVal.className = 'details-order-value';
+    orderVal.textContent =
+        attr.attribute_order !== undefined && attr.attribute_order !== null
+            ? String(attr.attribute_order)
+            : '';
+    const btnUp = document.createElement('button');
+    btnUp.type = 'button';
+    btnUp.className = 'details-order-btn';
+    btnUp.setAttribute('aria-label', 'Move attribute up');
+    btnUp.textContent = '↑';
+    btnUp.disabled = orderIdx <= 0;
+    btnUp.addEventListener('click', () => {
+        if (!swapAttributeOrderWithNeighbor(attr, -1)) return;
+        const eid = findEntityContainingAttribute(attr.attribute_id)?.entity_id;
+        if (eid) syncEntityAttributeOrderInCy(eid);
+        schedulePersistWorkingModel();
+        renderAttributeDetails(attr);
+    });
+    const btnDown = document.createElement('button');
+    btnDown.type = 'button';
+    btnDown.className = 'details-order-btn';
+    btnDown.setAttribute('aria-label', 'Move attribute down');
+    btnDown.textContent = '↓';
+    btnDown.disabled = orderIdx < 0 || orderIdx >= attrsSorted.length - 1;
+    btnDown.addEventListener('click', () => {
+        if (!swapAttributeOrderWithNeighbor(attr, 1)) return;
+        const eid = findEntityContainingAttribute(attr.attribute_id)?.entity_id;
+        if (eid) syncEntityAttributeOrderInCy(eid);
+        schedulePersistWorkingModel();
+        renderAttributeDetails(attr);
+    });
+    orderRow.appendChild(orderVal);
+    orderRow.appendChild(btnUp);
+    orderRow.appendChild(btnDown);
+    orderWrap.appendChild(orderRow);
+    form.appendChild(orderWrap);
+
     root.appendChild(form);
 }
 
@@ -514,14 +605,15 @@ function modelToNodesEdges() {
                     id: rel.relationship_id,
                     source: rel.parent_attribute_id,
                     target: rel.child_attribute_id,
-                    label: rel.relationship_name,
+                    label: rel.cardinality,
                     sourceEntity: rel.parent_entity_id,
                     targetEntity: rel.child_entity_id,
                     type: 'relationship',
                     parentMandatory: rel.parent_mandatory,
                     childMandatory: rel.child_mandatory,
                     parentCardinality: rel.parent_cardinality,
-                    childCardinality: rel.child_cardinality
+                    childCardinality: rel.child_cardinality,
+                    cardinality: rel.cardinality
                 }
             }
         )
@@ -692,6 +784,21 @@ function cyPositionAttributes(ent){
             y: topY + i * ROW_H + ROW_H / 2
         });
     });   
+}
+
+function syncEntityAttributeOrderInCy(entityId) {
+    if (!cy) return;
+    const entCy = cy.getElementById(entityId);
+    if (!entCy || entCy.length === 0) return;
+    const ent = findEntityById(entityId);
+    if (!ent) return;
+    for (const a of ent.attributes || []) {
+        const n = cy.getElementById(a.attribute_id);
+        if (n.length > 0) {
+            n.data('attributeOrder', a.attribute_order);
+        }
+    }
+    cyPositionAttributes(entCy);
 }
 
 function saveLayout() {

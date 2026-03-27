@@ -186,6 +186,38 @@
             min-height: 4rem;
         }
 
+        .details-order-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem;
+            margin-top: 0.2rem;
+        }
+
+        .details-order-value {
+            font-size: 0.9rem;
+            min-width: 1.5rem;
+        }
+
+        .details-order-btn {
+            padding: 0.2rem 0.45rem;
+            font: inherit;
+            line-height: 1;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+        }
+
+        .details-order-btn:hover:not(:disabled) {
+            background: #f0f7ff;
+        }
+
+        .details-order-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         .open-model-dialog {
             border: 1px solid #ccc;
             border-radius: 6px;
