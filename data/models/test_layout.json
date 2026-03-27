@@ -1,0 +1,14 @@
+{
+  "layout": [
+    {
+      "entity_id": "entity-uuid-1",
+      "x_coord": 0,
+      "y_coord": 0
+    },
+    {
+      "entity_id": "entity-uuid-2",
+      "x_coord": 300,
+      "y_coord": 300
+    }
+  ]
+}
