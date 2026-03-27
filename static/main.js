@@ -57,6 +57,7 @@ async function loadWorkingCopyAndRender(canonicalStem) {
     console.log('Nodes created:', nodes.length);
     console.log('Edges created:', edges.length);
     renderCy();
+    clearDetailsPane();
 }
 
 async function openCanonicalModel(canonicalStem) {
@@ -115,6 +116,83 @@ async function openModel() {
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+function findEntityById(id) {
+    const entities = model.entities || [];
+    return entities.find((e) => e.entity_id === id) ?? null;
+}
+
+function findAttributeById(id) {
+    const entities = model.entities || [];
+    for (const ent of entities) {
+        const attrs = ent.attributes || [];
+        const attr = attrs.find((a) => a.attribute_id === id);
+        if (attr) return attr;
+    }
+    return null;
+}
+
+function formatValueForDisplay(value) {
+    if (value === null) return { isJson: false, text: 'null' };
+    if (typeof value === 'string') {
+        return { isJson: false, text: value === '' ? '(empty)' : value };
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return { isJson: false, text: String(value) };
+    }
+    if (typeof value === 'object') {
+        return { isJson: true, text: JSON.stringify(value, null, 2) };
+    }
+    return { isJson: false, text: String(value) };
+}
+
+function renderDetailsPane(kind, record) {
+    const root = document.getElementById('details-content');
+    if (!root) return;
+    root.replaceChildren();
+    const h3 = document.createElement('h3');
+    h3.textContent = kind;
+    root.appendChild(h3);
+    const dl = document.createElement('dl');
+    dl.className = 'details-props';
+    const keys = Object.keys(record).sort();
+    for (const key of keys) {
+        const dt = document.createElement('dt');
+        dt.textContent = key;
+        const dd = document.createElement('dd');
+        const fmt = formatValueForDisplay(record[key]);
+        if (fmt.isJson) {
+            const pre = document.createElement('pre');
+            pre.textContent = fmt.text;
+            dd.appendChild(pre);
+        } else {
+            dd.textContent = fmt.text;
+        }
+        dl.appendChild(dt);
+        dl.appendChild(dd);
+    }
+    root.appendChild(dl);
+}
+
+function renderDetailsError(message) {
+    const root = document.getElementById('details-content');
+    if (!root) return;
+    root.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'details-error';
+    p.textContent = message;
+    root.appendChild(p);
+}
+
+function clearDetailsPane() {
+    const root = document.getElementById('details-content');
+    if (!root) return;
+    root.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'details-placeholder';
+    p.textContent = 'Select an entity or attribute on the diagram.';
+    root.appendChild(p);
 }
 
 function modelToNodesEdges() {
@@ -246,6 +324,25 @@ function renderCy() {
 
     cy.on('free','node[type = "attribute"]', (evt) => {
         evt.target.grabify();
+    });
+
+    cy.on('tap', (evt) => {
+        if (evt.target === cy) {
+            clearDetailsPane();
+        }
+    });
+
+    cy.on('tap', 'node', (evt) => {
+        const nodeType = evt.target.data('type');
+        if (nodeType === 'entity') {
+            const ent = findEntityById(evt.target.id());
+            if (ent) renderDetailsPane('Entity', ent);
+            else renderDetailsError('Entity not found in model.');
+        } else if (nodeType === 'attribute') {
+            const attr = findAttributeById(evt.target.id());
+            if (attr) renderDetailsPane('Attribute', attr);
+            else renderDetailsError('Attribute not found in model.');
+        }
     });
 
     if (!workspaceResizeInitialized) {

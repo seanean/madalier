@@ -89,6 +89,61 @@
             font-weight: 600;
         }
 
+        .details-pane h3 {
+            margin: 0 0 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .details-placeholder {
+            margin: 0;
+            font-size: 0.85rem;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .details-error {
+            margin: 0;
+            font-size: 0.85rem;
+            color: #a30;
+        }
+
+        .details-props {
+            margin: 0;
+        }
+
+        .details-props dt {
+            margin: 0.5rem 0 0.15rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #555;
+            text-transform: none;
+        }
+
+        .details-props dt:first-child {
+            margin-top: 0;
+        }
+
+        .details-props dd {
+            margin: 0;
+            font-size: 0.85rem;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+
+        .details-props pre {
+            margin: 0.25rem 0 0;
+            padding: 0.4rem 0.5rem;
+            font-size: 0.75rem;
+            line-height: 1.35;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 40vh;
+        }
+
         .open-model-dialog {
             border: 1px solid #ccc;
             border-radius: 6px;
@@ -230,6 +285,9 @@
                 aria-label="Resize details panel" tabindex="0"></div>
             <aside class="details-pane" aria-label="Details">
                 <h2>Details</h2>
+                <div id="details-content">
+                    <p class="details-placeholder">Select an entity or attribute on the diagram.</p>
+                </div>
             </aside>
         </div>
     </main>
