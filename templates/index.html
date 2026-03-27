@@ -88,6 +88,60 @@
             font-size: 1rem;
             font-weight: 600;
         }
+
+        .open-model-dialog {
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 0;
+            min-width: 280px;
+        }
+
+        .open-model-dialog::backdrop {
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .open-model-dialog header {
+            padding: 0.65rem 0.75rem;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .open-model-dialog .dialog-body {
+            padding: 0.75rem;
+            max-height: 50vh;
+            overflow: auto;
+        }
+
+        .open-model-dialog ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .open-model-dialog li button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 0.45rem 0.5rem;
+            margin-bottom: 0.25rem;
+            font: inherit;
+            cursor: pointer;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fff;
+        }
+
+        .open-model-dialog li button:hover {
+            background: #f0f7ff;
+        }
+
+        .open-model-dialog footer {
+            padding: 0.5rem 0.75rem;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+        }
     </style>
     <script src="../static/cytoscape.min.js"></script>
     <script src="../static/dagre.min.js"></script>
@@ -98,7 +152,7 @@
 <body>
     <header class="app-header" role="banner">
         <button type="button">New model</button>
-        <button type="button">Open model</button>
+        <button type="button" id="open-model-btn">Open model</button>
         <button type="button">Save model</button>
         <button type="button">Add entity</button>
         <button type="button">Add attribute</button>
@@ -119,6 +173,16 @@
             </aside>
         </div>
     </main>
+
+    <dialog id="open-model-dialog" class="open-model-dialog" aria-labelledby="open-model-dialog-title">
+        <header id="open-model-dialog-title">Open model</header>
+        <div class="dialog-body">
+            <ul id="open-model-list"></ul>
+        </div>
+        <footer>
+            <button type="button" id="open-model-cancel">Cancel</button>
+        </footer>
+    </dialog>
 </body>
 
 </html>

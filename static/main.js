@@ -7,39 +7,95 @@ let layout = {};
 let positions = {};
 let nodes = [];
 let edges = [];
+let currentModelStem = null;
+let workspaceResizeInitialized = false;
 cy = undefined;
 
-async function pageInit(){
-    await retrieveModel();
-    await retrieveLayout();
+async function retrieveModel(stem) {
+    const res = await fetch('/api/load_model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: stem })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+    }
+    model = await res.json();
+}
+
+async function retrieveLayout(stem) {
+    const res = await fetch('/api/load_layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: stem })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+    }
+    const rJson = await res.json();
+    layout = rJson;
+    positions = {};
+    const arr = layout.layout || [];
+    for (const position of arr) {
+        positions[position.entity_id] = { x: position.x_coord, y: position.y_coord };
+    }
+}
+
+async function loadModelAndRender(stem) {
+    currentModelStem = stem;
+    await retrieveModel(stem);
+    await retrieveLayout(stem);
     modelToNodesEdges();
-    console.log('Nodes created:', nodes.length); // Debug: check node count
+    console.log('Nodes created:', nodes.length);
     console.log('Edges created:', edges.length);
     renderCy();
 }
 
-async function retrieveModel() {
-    let apiStr = '/api/load_model'
-    let reqInit = { method: 'GET' }
-    return fetch(apiStr, reqInit)
-        .then(res => res.json())
-        .then(rJson => {
-            model = rJson;
-        });
-}
-
-async function retrieveLayout() {
-    let apiStr = '/api/load_layout'
-    let reqInit = { method: 'GET' }
-    return fetch(apiStr, reqInit)
-        .then(res => res.json())
-        .then(rJson => {
-            layout = rJson;
-            positions = {};
-            for (const position of layout.layout) {
-                positions[position.entity_id] = { x : position.x_coord, y: position.y_coord }
-            }
-        });
+async function openModel() {
+    const btn = document.getElementById('open-model-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch('/api/list_models');
+        if (!res.ok) {
+            alert('Could not list models.');
+            return;
+        }
+        const data = await res.json();
+        const stems = data.models || [];
+        if (stems.length === 0) {
+            alert('No models found in data/models.');
+            return;
+        }
+        const listEl = document.getElementById('open-model-list');
+        const dialog = document.getElementById('open-model-dialog');
+        if (!listEl || !dialog) return;
+        listEl.replaceChildren();
+        for (const s of stems) {
+            const li = document.createElement('li');
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = s;
+            b.addEventListener('click', async () => {
+                dialog.close();
+                try {
+                    await loadModelAndRender(s);
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Failed to load model.');
+                }
+            });
+            li.appendChild(b);
+            listEl.appendChild(li);
+        }
+        dialog.showModal();
+    } catch (e) {
+        console.error(e);
+        alert('Could not list models.');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 function modelToNodesEdges() {
@@ -119,6 +175,10 @@ function modelToNodesEdges() {
 }
 
 function renderCy() {
+    if (cy) {
+        cy.destroy();
+        cy = undefined;
+    }
     cy = cytoscape({
         container: document.getElementById('cy'),
         elements: {
@@ -128,7 +188,7 @@ function renderCy() {
         style: cyStyle
     });
     
-    if (layout && layout.layout.length > 0 ){
+    if (layout && layout.layout && layout.layout.length > 0) {
         cy.batch(() => {
             cy.nodes('[type = "entity"]').forEach(ent => {
                 ent.position(positions[ent.id()]);
@@ -167,7 +227,10 @@ function renderCy() {
         evt.target.grabify();
     });
 
-    initWorkspaceResize();
+    if (!workspaceResizeInitialized) {
+        initWorkspaceResize();
+        workspaceResizeInitialized = true;
+    }
 }
 
 function initWorkspaceResize() {
@@ -258,26 +321,23 @@ function cyPositionAttributes(ent){
     });   
 }
 
-function saveLayout(){
-    let layout_arr = [];
-    const LayoutData = cy.nodes('[type = "entity"]').forEach(ent => {
-        layout_arr.push(
-            {
-                entity_id: ent.id(),
-                x_coord: ent.position('x'),
-                y_coord: ent.position('y')
-            }
-        );
+function saveLayout() {
+    if (!currentModelStem || !cy) return;
+    const layout_arr = [];
+    cy.nodes('[type = "entity"]').forEach(ent => {
+        layout_arr.push({
+            entity_id: ent.id(),
+            x_coord: ent.position('x'),
+            y_coord: ent.position('y')
+        });
     });
 
-    let apiStr = '/api/save_layout';
-    let reqInit = {
-                method: 'POST'
-                , headers: { 'Content-Type': 'application/json' }
-                , body: JSON.stringify({ layout : layout_arr })
-    }
-    
-    fetch(apiStr, reqInit);
+    const q = new URLSearchParams({ model: currentModelStem });
+    fetch(`/api/save_layout?${q}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout: layout_arr })
+    });
 }
 
 const cyStyle = [
@@ -333,6 +393,7 @@ const cyStyle = [
     }
     
 ];
-
-
-window.addEventListener('load', pageInit)
+document.getElementById('open-model-btn')?.addEventListener('click', () => openModel());
+document.getElementById('open-model-cancel')?.addEventListener('click', () => {
+    document.getElementById('open-model-dialog')?.close();
+});
