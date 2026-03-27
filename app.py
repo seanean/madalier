@@ -12,9 +12,11 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    # return render_template('index.html')
-    return load_json()
+    return render_template('index.html')
 
+@app.route('/api/load_json')
+def api_load_json():
+    return load_json()
 
 def load_json():
     with open('schemas/model.json') as f:
