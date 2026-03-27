@@ -2,3 +2,4 @@ venv
 notes.txt
 *.log
 __pycache__
+temp_*.json
