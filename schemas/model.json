@@ -1,0 +1,225 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/werealldudes/madalier/schemas/model.json",
+    "title": "Data Model",
+    "description": "Describing the content of a data model as generated and modified by Madalier.",
+    "type": "object",
+    "properties": {
+        "meta": {
+            "description": "Object containing meta information about a data model.",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name of the data model.",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Description of the data model.",
+                    "type": "string"
+                },
+                "created": {
+                    "description": "UTC created datetime of the data model in ISO 8601 format (2001-01-01T00:00:00.000Z).",
+                    "type": "string"
+                },
+                "modified": {
+                    "description": "UTC modified datetime of the data model in ISO 8601 format (2001-01-01T00:00:00.000Z).",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "description",
+                "created",
+                "modified"
+            ]
+        },
+        "entities": {
+            "description": "Array containing all entities in the data model.",
+            "type": "array",
+            "items": {
+                "description": "Entity within the data model.",
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "description": "Universal unique identifier for an individual entity.",
+                        "type": "string"
+                    },
+                    "business_name": {
+                        "description": "Business name of an entity.",
+                        "type": "string"
+                    },
+                    "technical_name": {
+                        "description": "Technical name of an entity, to be used in physical implementation, auto-generated via naming_conventions.json mappings.",
+                        "type": "string"
+                    },
+                    "entity_type": {
+                        "description": "Indicator of whether an entity is a table or a view.",
+                        "type": "string",
+                        "enum": [
+                            "view",
+                            "table"
+                        ]
+                    },
+                    "definition": {
+                        "description": "Description of what the entity contains.",
+                        "type": "string"
+                    },
+                    "attributes": {
+                        "description": "Array of attributes present on an entity.",
+                        "type": "array",
+                        "items": {
+                            "description": "An attribute present on an entity",
+                            "type": "object",
+                            "properties": {
+                                "attribute_id": {
+                                    "description": "Universal unique identifier for an individual attribute, unique across all entities.",
+                                    "type": "string"
+                                },
+                                "business_name": {
+                                    "description": "Business name of an attribute.",
+                                    "type": "string"
+                                },
+                                "technical_name": {
+                                    "description": "Technical name of an attribute, to be used in physical implementation, auto-generated via naming_conventions.json mappings.",
+                                    "type": "string"
+                                },
+                                "data_type": {
+                                    "description": "Data type of the attribute, options: [STRING, TEXT, INTEGER, BIGINT, SMALLINT, DECIMAL, FLOAT, BOOLEAN, DATE, TIMESTAMP, BINARY]",
+                                    "type": "string",
+                                    "enum": [
+                                        "STRING",
+                                        "TEXT",
+                                        "INTEGER",
+                                        "BIGINT",
+                                        "SMALLINT",
+                                        "DECIMAL",
+                                        "FLOAT",
+                                        "BOOLEAN",
+                                        "DATE",
+                                        "TIMESTAMP",
+                                        "BINARY"
+                                    ]
+                                },
+                                "precision": {
+                                    "description": "Numeric precision for DECIMAL data type (total number of digits).",
+                                    "type": "integer"
+                                },
+                                "scale": {
+                                    "description": "Numeric scale for DECIMAL data type (digits after decimal point).",
+                                    "type": "integer"
+                                },
+                                "key_type": {
+                                    "description": "Key classification of the attribute.",
+                                    "type": ["string", "null"],
+                                    "enum": [
+                                        null,
+                                        "PRIMARY",
+                                        "FOREIGN",
+                                        "NATURAL"
+                                    ]
+                                },
+                                "definition": {
+                                    "description": "Description of what the attribute contains.",
+                                    "type": "string"
+                                },
+                                "source_mapping": {
+                                    "description": "Source mapping expression for this attribute, describing where its data originates.",
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "attribute_id",
+                                "business_name",
+                                "technical_name",
+                                "data_type",
+                                "definition"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "entity_id",
+                    "business_name",
+                    "technical_name",
+                    "entity_type",
+                    "definition"
+                ]
+            }
+        },
+        "relationships": {
+            "description": "Array of relationships present between attributes in the data model.",
+            "type": "array",
+            "items": {
+                "description": "Individual relationship between two attributes in the data model.",
+                "type": "object",
+                "properties": {
+                    "relationship_id": {
+                        "description": "Universal unique identifier for individual relationship in the model.",
+                        "type": "string"
+                    },
+                    "relationship_name": {
+                        "description": "Name of the relationship, in format of 'parent_entity.parent_attribute 1:M child_entity.childattribute'",
+                        "type": "string"
+                    },
+                    "parent_entity_id": {
+                        "description": "Universal unique identifier of the parent entity in the relationship (taken from the entity_id).",
+                        "type": "string"
+                    },
+                    "parent_attribute_id": {
+                        "description": "Universal unique identifier of the parent attribute in the relationship (taken from the attribute_id).",
+                        "type": "string"
+                    },
+                    "child_entity_id": {
+                        "description": "Universal unique identifier of the child entity in the relationship (taken from the entity_id).",
+                        "type": "string"
+                    },
+                    "child_attribute_id": {
+                        "description": "Universal unique identifier of the child attribute in the relationship (taken from the attribute_id).",
+                        "type": "string"
+                    },
+                    "parent_mandatory": {
+                        "description": "Whether the parent is mandatory in the relationship or not.",
+                        "type": "boolean"
+                    },
+                    "parent_cardinality": {
+                        "description": "Cardinality of the parent side of the relationship.",
+                        "type": "string",
+                        "enum": [
+                            "One",
+								   
+                            "Many"
+                        ]
+                    },
+                    "child_mandatory": {
+                        "description": "Whether the child is mandatory in the relationship or not.",
+                        "type": "boolean"
+                    },
+                    "child_cardinality": {
+                        "description": "Cardinality of the child side of the relationship.",
+                        "type": "string",
+                        "enum": [
+                            "One",
+								   
+                            "Many"
+                        ]
+                    }
+                },
+                "required": [
+                    "relationship_id",
+                    "relationship_name",
+                    "parent_entity_id",
+                    "parent_attribute_id",
+                    "child_entity_id",
+                    "child_attribute_id",
+                    "parent_mandatory",
+                    "parent_cardinality",
+                    "child_mandatory",
+                    "child_cardinality"
+                ]
+            }
+        }
+    },
+    "required": [
+        "meta"
+    ]
+}

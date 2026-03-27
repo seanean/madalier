@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/werealldudes/madalier/schemas/naming.json",
+    "title": "Data Model Naming",
+    "description": "Describing the naming conventions for entities in the Madalier visualization.",
+    "type": "object",
+    "properties": {
+        "naming_convention": {
+            "description": "Configurable code describing naming convention for how business names will be translated to technical names. Options: [lower_snake_case, UPPER_SNAKE_CASE, Proper_Snake_Case, lower-kebab-case, UPPER-KEBAB-CASE, Proper-Kebab-Case, camelCase, PascalCase]",
+            "type": "string",
+            "enum": ["lower_snake_case", "UPPER_SNAKE_CASE", "Proper_Snake_Case", "lower-kebab-case", "UPPER-KEBAB-CASE", "Proper-Kebab-Case", "camelCase", "PascalCase"]
+        },
+        "word_mappings": {
+            "description": "Array containing mappings of words to their technical abbreviations.",
+            "type": "array",
+            "items": {
+                "description": "Mapping of a word to its technical abbreviation.",
+                "type": "object",
+                "properties": {
+                    "business_name": {
+                        "description": "The business name that needs to be translated.",
+                        "type": "string"
+                    },
+                    "technical_abbreviation": {
+                        "description": "The technical abbreviation for the business name.",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "business_name",
+                    "technical_abbreviation"
+                ]
+            }
+        }
+    },
+    "required": [
+        "naming_convention"
+    ]
+}
