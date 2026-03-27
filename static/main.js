@@ -1,4 +1,6 @@
-import cytoscape from "./cytoscape.esm.min.js";
+const CARD_WIDTH = 220;
+const HEADER_H = 28;
+const ROW_H = 24;
 
 let model = {};
 let nodes = [];
@@ -13,7 +15,7 @@ async function pageInit(){
 }
 
 async function retrieveModel() {
-    let apiStr = '/api/load_json'
+    let apiStr = '/api/load_model'
     let reqInit = { method: 'GET' }
     return fetch(apiStr, reqInit)
         .then(res => res.json())
@@ -23,6 +25,8 @@ async function retrieveModel() {
 }
 
 function modelToNodesEdges() {
+    nodes = [];
+    edges = [];
     for (const ent of model.entities) {
         nodes.push(
             {
@@ -33,7 +37,22 @@ function modelToNodesEdges() {
                     technicalName: ent.technicalName,
                     entityType: ent.entity_type,
                     definition: ent.definition,
-                    type: 'entity'
+                    type: 'entity',
+                    attributes: ent.attributes
+                }
+            }
+        )
+        nodes.push(
+            {
+                data: {
+                    label: ent.business_name,
+                    id: ent.entity_id + '_hdr',
+                    businessName: ent.business_name,
+                    technicalName: ent.technicalName,
+                    entityType: ent.entity_type,
+                    definition: ent.definition,
+                    parent: ent.entity_id,
+                    type: 'entity-header'
                 }
             }
         )
@@ -51,18 +70,9 @@ function modelToNodesEdges() {
                         keyType: attr.key_type,
                         sourceMapping: attr.entity_type,
                         definition: attr.definition,
-                        type: 'attribute'
-                    }
-                }
-            )
-            edges.push(
-                {
-                    data : {
-                        id : ent.entity_id + attr.attribute_id,
-                        source: ent.entity_id,
-                        target: attr.attribute_id,
-                        type: 'entity_attribute',
-                        label: ent.entity_id + attr.attribute_id
+                        parent: ent.entity_id,
+                        type: 'attribute',
+                        attributeOrder: attr.attribute_order
                     }
                 }
             )
@@ -97,34 +107,105 @@ function renderCy() {
             nodes: nodes,
             edges: edges
         },
-        style: [
-            {
-                selector: 'node',
-                style: {
-                    'label': 'data(label)',
-                    'background-color': '#0074D9',
-                    'color': '#fff',
-                    'text-valign': 'center',
-                    'text-halign': 'center'
-                }
-            },
-            {
-                selector: 'edge',
-                style: {
-                    'label': 'data(label)',
-                    'width': 2,
-                    'line-color': '#ccc',
-                    'target-arrow-color': '#ccc',
-                    'target-arrow-shape': 'triangle',
-                    'curve-style': 'bezier'
-                }
-            }
-        ],
-        layout: {
-            name: 'grid',
-            padding: 10
-        }
+        style: cyStyle
+    });
+
+    cy.layout({
+        name: 'dagre',
+        rankDir: 'LR',
+        nodeSep: 40,
+        rankSep: 120,
+        padding: 40,
+        nodeDimensionsIncludeLabels: false,
+        animate: false
+    }).run();
+
+    cy.nodes('[type = "entity"]').forEach(ent => cyPositionAttributes(ent));
+
+    cy.on('dragfree','node[type = "entity"]', (evt) => {
+        console.log();
+        if(evt.target.data('type') === 'entity') { cyPositionAttributes(evt.target);}
+        else { return; }
+    });
+
+    cy.on('grab','node[type = "attribute"]', (evt) => {
+        evt.target.ungrabify();
+    });
+
+    cy.on('free','node[type = "attribute"]', (evt) => {
+        evt.target.grabify();
     });
 }
+
+function cyPositionAttributes(ent){
+    const pos = ent.position();
+    const entAttrs = ent.children().sort((a, b) => a.data('attributeOrder') - b.data('attributeOrder'));
+    const totalH = HEADER_H + entAttrs.length * ROW_H;
+    const topY = pos.y - totalH / 2 + HEADER_H;
+
+    entAttrs.forEach((attr, i) => {
+        attr.position({
+            x: pos.x,
+            y: topY + i * ROW_H + ROW_H / 2
+        });
+    });   
+}
+
+
+
+const cyStyle = [
+    {
+        selector: 'node[type = "entity"]',
+        style: {
+            'shape': 'rectangle',
+            'label': '',
+            'padding-top': `${HEADER_H}px`,
+            'padding-bottom': '4px',
+            'padding-left': '0px',
+            'padding-right': '0px',
+            'text-valign': 'top',
+            'text-halign': 'center',
+            'compound-sizing-wrt-labels': 'exclude',
+            'background-color': '#a9d1f1',
+        }
+    },
+    {
+        selector: 'node[type = "attribute"]',
+        style: {
+            'shape': 'rectangle',
+            'label': 'data(label)',
+            'width': `${CARD_WIDTH}px`,
+            'height': `${ROW_H}px`,
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'background-color': '#f0f0f0',
+            'border-color': '#ccc',
+            'border-width': 1
+        }
+    },
+    {
+        selector: 'node[type = "entity-header"]',
+        style: {
+            'shape': 'rectangle',
+            'label': 'data(label)',
+            'events': 'no',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'background-opacity': 0,
+        }
+    },
+    {
+        selector: 'edge[type = "relationship"]',
+        style: {
+            'width': 2,
+            'label': 'data(label)',
+            'curve-style':'taxi',
+            'taxi-direction': 'horizontal',
+            'taxi-turn': 50
+        }
+    }
+    
+];
+
 
 window.addEventListener('load', pageInit)
