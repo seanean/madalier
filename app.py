@@ -23,7 +23,7 @@ def load_model():
     with open('schemas/model.json') as f:
         schema = json.load(f)
         logger.info('Model loaded.')
-    with open('data/models/test_model.json') as f:
+    with open('data/models/test.json') as f:
         data = json.load(f)
         logger.info('Model schema loaded.')
     try:
@@ -44,7 +44,7 @@ def load_layout():
     with open('schemas/layout.json') as f:
         schema = json.load(f)
         logger.info('Layout schema loaded.')
-    with open('data/models/test_layout.json') as f:
+    with open('data/models/layouts/test.json') as f:
         data = json.load(f)
         logger.info('Layout loaded.')
     try:
@@ -70,7 +70,7 @@ def save_layout(layout_to_save):
         jsonschema.validate(instance=layout_to_save, schema=schema)
         logger.info('Layout schema validation success.')
         try:
-            file_path = os.path.join('data/models', 'test_layout.json')
+            file_path = os.path.join('data/models/layouts', 'test.json')
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(layout_to_save, f, indent=4, ensure_ascii=False)
             return jsonify({
