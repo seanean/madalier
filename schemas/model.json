@@ -24,6 +24,14 @@
                 "modified": {
                     "description": "UTC modified datetime of the data model in ISO 8601 format (2001-01-01T00:00:00.000Z).",
                     "type": "string"
+                },
+                "version": {
+                    "description": "Version of the data model.",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Name of who created the data model.",
+                    "type": "string"
                 }
             },
             "required": [
