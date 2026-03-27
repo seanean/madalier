@@ -7,8 +7,8 @@ let layout = {};
 let positions = {};
 let nodes = [];
 let edges = [];
-/** Canonical file stem (e.g. test). Edits use temp_<stem> on the server until Save. */
-let canonicalModelStem = null;
+/** Canonical meta.technical_name; files are &lt;technical_name&gt;.json and temp_&lt;technical_name&gt; while editing. */
+let canonicalTechnicalName = null;
 let workspaceResizeInitialized = false;
 cy = undefined;
 
@@ -27,15 +27,11 @@ const SCHEMA_SIDE_CARDINALITY = ['One', 'Many'];
 let persistModelTimer = null;
 let detailsPersistErrorText = null;
 
-function workingStemForCanonical(stem) {
-    return stem ? `temp_${stem}` : null;
-}
-
-async function retrieveModel(stem) {
+async function retrieveModel(technicalName, working) {
     const res = await fetch('/api/load_model', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: stem })
+        body: JSON.stringify({ technical_name: technicalName, working }),
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -44,11 +40,11 @@ async function retrieveModel(stem) {
     model = await res.json();
 }
 
-async function retrieveLayout(stem) {
+async function retrieveLayout(technicalName, working) {
     const res = await fetch('/api/load_layout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: stem })
+        body: JSON.stringify({ technical_name: technicalName, working }),
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -63,13 +59,12 @@ async function retrieveLayout(stem) {
     }
 }
 
-async function loadWorkingCopyAndRender(canonicalStem) {
+async function loadWorkingCopyAndRender(technicalName) {
     clearTimeout(persistModelTimer);
     persistModelTimer = null;
-    canonicalModelStem = canonicalStem;
-    const ws = workingStemForCanonical(canonicalStem);
-    await retrieveModel(ws);
-    await retrieveLayout(ws);
+    canonicalTechnicalName = technicalName;
+    await retrieveModel(technicalName, true);
+    await retrieveLayout(technicalName, true);
     modelToNodesEdges();
     console.log('Nodes created:', nodes.length);
     console.log('Edges created:', edges.length);
@@ -77,31 +72,31 @@ async function loadWorkingCopyAndRender(canonicalStem) {
     clearDetailsPane();
 }
 
-async function openCanonicalModel(canonicalStem) {
+async function openCanonicalModel(technicalName) {
     const res = await fetch('/api/open_model', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: canonicalStem }),
+        body: JSON.stringify({ technical_name: technicalName }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
         throw new Error(data.error || res.statusText);
     }
-    await loadWorkingCopyAndRender(canonicalStem);
+    await loadWorkingCopyAndRender(technicalName);
 }
 
 async function openModel() {
     const btn = document.getElementById('open-model-btn');
     if (btn) btn.disabled = true;
     try {
-        const res = await fetch('/api/list_models');
+        const res = await fetch('/api/list_technical_names');
         if (!res.ok) {
             alert('Could not list models.');
             return;
         }
         const data = await res.json();
-        const stems = data.models || [];
-        if (stems.length === 0) {
+        const technicalNames = data.technical_names || [];
+        if (technicalNames.length === 0) {
             alert('No models found in data/models.');
             return;
         }
@@ -109,7 +104,7 @@ async function openModel() {
         const dialog = document.getElementById('open-model-dialog');
         if (!listEl || !dialog) return;
         listEl.replaceChildren();
-        for (const s of stems) {
+        for (const s of technicalNames) {
             const li = document.createElement('li');
             const b = document.createElement('button');
             b.type = 'button';
@@ -224,17 +219,18 @@ function schedulePersistWorkingModel() {
     }, 450);
 }
 
-/** Persists in-memory `model` to temp_<stem>.json. Returns whether the write succeeded. */
+/** Persists in-memory `model` to temp_<technical_name>.json. Returns whether the write succeeded. */
 async function persistWorkingModel() {
-    if (!canonicalModelStem) return true;
-    const ws = workingStemForCanonical(canonicalModelStem);
-    if (!ws) return true;
-    const q = new URLSearchParams({ model: ws });
+    if (!canonicalTechnicalName) return true;
     try {
-        const res = await fetch(`/api/save_working_model?${q}`, {
+        const res = await fetch('/api/save_working_model', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(model),
+            body: JSON.stringify({
+                technical_name: canonicalTechnicalName,
+                working: true,
+                model,
+            }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
@@ -972,8 +968,7 @@ function syncEntityAttributeOrderInCy(entityId) {
 }
 
 function saveLayout() {
-    if (!canonicalModelStem || !cy) return;
-    const ws = workingStemForCanonical(canonicalModelStem);
+    if (!canonicalTechnicalName || !cy) return;
     const layout_arr = [];
     cy.nodes('[type = "entity"]').forEach(ent => {
         layout_arr.push({
@@ -983,11 +978,14 @@ function saveLayout() {
         });
     });
 
-    const q = new URLSearchParams({ model: ws });
-    fetch(`/api/save_layout?${q}`, {
+    fetch('/api/save_layout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ layout: layout_arr })
+        body: JSON.stringify({
+            technical_name: canonicalTechnicalName,
+            working: true,
+            layout: layout_arr,
+        }),
     });
 }
 
@@ -1053,29 +1051,52 @@ function openNewModelDialog() {
     resetNewModelForm();
     const dialog = document.getElementById('new-model-dialog');
     dialog?.showModal();
-    queueMicrotask(() => document.getElementById('new-model-stem')?.focus());
+    queueMicrotask(() => document.getElementById('new-model-name')?.focus());
 }
+
+/** Must match TECHNICAL_NAME_RE in app.py (UX only; server enforces in parse_technical_name_field). */
+const TECHNICAL_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 async function submitNewModel(ev) {
     ev.preventDefault();
-    const stemInput = document.getElementById('new-model-stem');
-    const nameInput = document.getElementById('new-model-display-name');
+    const nameInput = document.getElementById('new-model-name');
+    const technicalInput = document.getElementById('new-model-technical-name');
+    const versionInput = document.getElementById('new-model-version');
+    const createdByInput = document.getElementById('new-model-created-by');
     const descInput = document.getElementById('new-model-description');
     const submitBtn = document.getElementById('new-model-submit');
     const dialog = document.getElementById('new-model-dialog');
-    if (!stemInput || !dialog) return;
-    const stem = stemInput.value.trim();
-    if (!stem) {
-        alert('Enter a file name.');
+    if (!nameInput || !technicalInput || !dialog) return;
+    const name = nameInput.value.trim();
+    if (!name) {
+        alert('Enter a name.');
         return;
     }
-    const nameVal = nameInput?.value.trim() ?? '';
+    const technical_name = technicalInput.value.trim();
+    if (!technical_name) {
+        alert('Enter a technical name.');
+        return;
+    }
+    if (!TECHNICAL_NAME_RE.test(technical_name)) {
+        alert(
+            'Technical name must be lower_snake_case: start with a letter, then letters, digits, or underscores only.',
+        );
+        return;
+    }
     const description = descInput?.value ?? '';
+    const version = (versionInput?.value ?? '').trim();
+    if (!version) {
+        alert('Enter a version.');
+        return;
+    }
+    const created_by = createdByInput?.value ?? '';
     const body = {
-        stem,
+        name,
+        technical_name,
         description,
+        version,
+        created_by,
     };
-    if (nameVal) body.name = nameVal;
     if (submitBtn) submitBtn.disabled = true;
     try {
         const res = await fetch('/api/create_model', {
@@ -1089,7 +1110,7 @@ async function submitNewModel(ev) {
             return;
         }
         dialog.close();
-        await loadWorkingCopyAndRender(data.stem);
+        await loadWorkingCopyAndRender(data.technical_name);
     } catch (e) {
         console.error(e);
         alert(e.message || 'Could not create model.');
@@ -1110,7 +1131,7 @@ document.getElementById('open-model-cancel')?.addEventListener('click', () => {
 });
 
 async function saveCanonicalModel() {
-    if (!canonicalModelStem) {
+    if (!canonicalTechnicalName) {
         alert('Open or create a model first.');
         return;
     }
@@ -1131,7 +1152,7 @@ async function saveCanonicalModel() {
         const res = await fetch('/api/save_model', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: canonicalModelStem }),
+            body: JSON.stringify({ technical_name: canonicalTechnicalName }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {

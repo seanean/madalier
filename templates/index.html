@@ -397,16 +397,24 @@
     <dialog id="new-model-dialog" class="new-model-dialog" aria-labelledby="new-model-dialog-title">
         <header id="new-model-dialog-title">New model</header>
         <form class="dialog-body" id="new-model-form">
-            <label for="new-model-stem">File name</label>
-            <input type="text" id="new-model-stem" name="stem" required autocomplete="off"
-                placeholder="e.g. customer_warehouse" pattern="[^/\\]+" maxlength="200">
-            <p class="field-hint">Edits use working files (temp_&lt;name&gt;) until you click Save model, which writes data/models/&lt;name&gt;.json and layouts/&lt;name&gt;.json.</p>
-            <label for="new-model-display-name">Display name (optional)</label>
-            <input type="text" id="new-model-display-name" name="name" autocomplete="off" maxlength="500"
-                placeholder="Defaults to file name">
-            <label for="new-model-description">Description (optional)</label>
+            <label for="new-model-name">Name</label>
+            <input type="text" id="new-model-name" name="name" required autocomplete="off" maxlength="500"
+                placeholder="e.g. Customer warehouse">
+            <label for="new-model-technical-name">Technical name</label>
+            <input type="text" id="new-model-technical-name" name="technical_name" required autocomplete="off"
+                placeholder="e.g. customer_warehouse"
+                pattern="[a-z][a-z0-9_]*" maxlength="200"
+                title="lower_snake_case: start with a letter; then letters, digits, underscores">
+            <p class="field-hint"><code>meta.name</code> is the label above; <code>meta.technical_name</code> is the id and file stem (<code>data/models/&lt;technical_name&gt;.json</code>). Edits use <code>temp_&lt;technical_name&gt;</code> until you save.</p>
+            <label for="new-model-version">Version</label>
+            <input type="text" id="new-model-version" name="version" required autocomplete="off" maxlength="100"
+                placeholder="1.0.0" value="1.0.0">
+            <label for="new-model-created-by">Created by</label>
+            <input type="text" id="new-model-created-by" name="created_by" autocomplete="off" maxlength="200"
+                placeholder="">
+            <label for="new-model-description">Description</label>
             <textarea id="new-model-description" name="description" maxlength="4000"
-                placeholder="Short description"></textarea>
+                placeholder="Short description (may be empty)"></textarea>
             <footer>
                 <button type="button" id="new-model-cancel">Cancel</button>
                 <button type="submit" id="new-model-submit">Create</button>

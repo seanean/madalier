@@ -3,8 +3,24 @@ from app_logger import get_logger
 import json
 import jsonschema
 import os
+import re
 import shutil
 from datetime import datetime, timezone
+
+
+# meta.technical_name and on-disk canonical file stem (lower_snake_case).
+# The UI should mirror this pattern for instant feedback; the server still validates once here because
+# anything can call the API (not only the browser).
+TECHNICAL_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
+
+
+class ApiError(Exception):
+    """Raise from helpers; Flask error handler turns this into JSON + status (no tuple plumbing)."""
+
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
 
 
 # init logging
@@ -13,38 +29,58 @@ logger = get_logger(__name__)
 # init app
 app = Flask(__name__)
 
+
+@app.errorhandler(ApiError)
+def handle_api_error(e):
+    return jsonify({'error': e.message}), e.status_code
+
+
+def parse_technical_name_field(data):
+    """Extract technical_name from a JSON object and enforce format. Raises ApiError on failure."""
+    if not isinstance(data, dict):
+        raise ApiError('expected JSON object')
+    raw = data.get('technical_name')
+    if not isinstance(raw, str) or not raw.strip():
+        raise ApiError('missing or invalid technical_name')
+    tn = raw.strip()
+    if not TECHNICAL_NAME_RE.fullmatch(tn):
+        raise ApiError('invalid technical_name')
+    return tn
+
+
+def path_stem_from_envelope(data, *, require_working=False):
+    """
+    Same JSON shape for load/save: technical_name + optional working (JSON boolean true => temp_<tn> file).
+    If require_working, body must include "working": true (e.g. save_working_model).
+    """
+    tn = parse_technical_name_field(data)
+    working = data.get('working') is True
+    if require_working and not working:
+        raise ApiError('working must be true')
+    path_stem = working_stem(tn) if working else tn
+    if not os.path.isfile(model_json_path(path_stem)):
+        raise ApiError('unknown model', 404)
+    return path_stem
+
 MODELS_DIR = os.path.join('data', 'models')
 LAYOUTS_DIR = os.path.join(MODELS_DIR, 'layouts')
 
 
-def list_model_stems():
-    """Canonical model stems only (excludes working copies temp_<stem>)."""
-    stems = []
+def list_technical_names():
+    """Canonical models on disk: file stem equals meta.technical_name (excludes temp_* working files)."""
+    names = []
     for name in os.listdir(MODELS_DIR):
         path = os.path.join(MODELS_DIR, name)
         if os.path.isfile(path) and name.lower().endswith('.json'):
             stem = os.path.splitext(name)[0]
             if not stem.startswith('temp_'):
-                stems.append(stem)
-    return sorted(stems)
+                names.append(stem)
+    return sorted(names)
 
 
-def working_stem(canonical_stem):
-    return f'temp_{canonical_stem}'
-
-
-def is_working_stem(stem):
-    return isinstance(stem, str) and stem.startswith('temp_')
-
-
-def parse_model_stem(raw):
-    """Return (stem, None) on success, or (None, reason) with reason 'empty' or 'unsafe'."""
-    if not isinstance(raw, str) or not raw.strip():
-        return None, 'empty'
-    stem = raw.strip()
-    if '/' in stem or '\\' in stem or stem in ('.', '..') or os.path.basename(stem) != stem:
-        return None, 'unsafe'
-    return stem, None
+def working_stem(technical_name):
+    """Working JSON file stem for a canonical meta.technical_name."""
+    return f'temp_{technical_name}'
 
 
 def model_json_path(stem):
@@ -55,77 +91,33 @@ def layout_json_path(stem):
     return os.path.join(LAYOUTS_DIR, f'{stem}.json')
 
 
-def stem_from_post_json():
-    """For load_model / load_layout: canonical stem must exist in list; working temp_* must exist on disk."""
+def path_stem_from_load_json():
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return None, (jsonify({'error': 'expected JSON object'}), 400)
-    stem, why = parse_model_stem(data.get('model'))
-    if stem is None:
-        msg = 'invalid model' if why == 'unsafe' else 'missing or invalid model'
-        return None, (jsonify({'error': msg}), 400)
-    if is_working_stem(stem):
-        if not os.path.isfile(model_json_path(stem)):
-            return None, (jsonify({'error': 'unknown model'}), 404)
-        return stem, None
-    if stem not in list_model_stems():
-        return None, (jsonify({'error': 'unknown model'}), 404)
-    return stem, None
+    return path_stem_from_envelope(data)
 
 
-def stem_from_post_create():
-    """Stem from POST JSON for create_model: accepts 'stem' or 'model'; must not already exist."""
+def _require_str(data, key, *, non_empty=True):
+    """Create payload: key must be present; value must be a string. Strip whitespace; non_empty enforces not ''."""
+    if key not in data:
+        raise ApiError(f'{key} is required')
+    v = data[key]
+    if v is None:
+        raise ApiError(f'{key} is required')
+    if not isinstance(v, str):
+        raise ApiError(f'invalid {key}')
+    v = v.strip()
+    if non_empty and not v:
+        raise ApiError(f'{key} is required')
+    return v
+
+
+def technical_name_from_post_create():
+    """POST create: technical_name only; must not already exist on disk."""
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return None, (jsonify({'success': False, 'error': 'expected JSON object'}), 400)
-    stem_key = data.get('stem')
-    if stem_key is None:
-        stem_key = data.get('model')
-    stem, why = parse_model_stem(stem_key)
-    if stem is None:
-        msg = 'invalid model' if why == 'unsafe' else 'missing or invalid model'
-        return None, (jsonify({'success': False, 'error': msg}), 400)
-    if stem.startswith('temp_'):
-        return None, (jsonify({'success': False, 'error': 'model name cannot start with temp_'}), 400)
-    if stem in list_model_stems():
-        return None, (jsonify({'success': False, 'error': 'a model with this name already exists'}), 409)
-    return stem, None
-
-
-def stem_from_save_layout_query():
-    raw = request.args.get('model', type=str)
-    if raw is None:
-        return None, (jsonify({'success': False, 'error': 'missing model query parameter'}), 400)
-    stem, why = parse_model_stem(raw)
-    if stem is None:
-        if why == 'empty':
-            return None, (jsonify({'success': False, 'error': 'missing model query parameter'}), 400)
-        return None, (jsonify({'success': False, 'error': 'invalid model'}), 400)
-    if is_working_stem(stem):
-        return stem, None
-    if stem not in list_model_stems():
-        return None, (jsonify({'success': False, 'error': 'unknown model'}), 400)
-    return stem, None
-
-
-def stem_from_save_working_model_query():
-    """Working copy only (temp_*), file must exist on disk."""
-    raw = request.args.get('model', type=str)
-    if raw is None:
-        return None, (jsonify({'success': False, 'error': 'missing model query parameter'}), 400)
-    stem, why = parse_model_stem(raw)
-    if stem is None:
-        if why == 'empty':
-            return None, (jsonify({'success': False, 'error': 'missing model query parameter'}), 400)
-        return None, (jsonify({'success': False, 'error': 'invalid model'}), 400)
-    if not is_working_stem(stem):
-        return None, (jsonify({
-            'success': False,
-            'error': 'model query must be a working copy (temp_<name>)',
-        }), 400)
-    if not os.path.isfile(model_json_path(stem)):
-        return None, (jsonify({'success': False, 'error': 'unknown model'}), 404)
-    return stem, None
+    tn = parse_technical_name_field(data)
+    if tn in list_technical_names():
+        raise ApiError('a model with this technical_name already exists', 409)
+    return tn
 
 
 def utc_iso_timestamp():
@@ -134,27 +126,22 @@ def utc_iso_timestamp():
 
 @app.route('/api/create_model', methods=['POST'])
 def api_create_model():
-    stem, err = stem_from_post_create()
-    if err:
-        return err
+    technical_name = technical_name_from_post_create()
     data = request.get_json(silent=True)
-    name = data.get('name')
-    if name is None or (isinstance(name, str) and not name.strip()):
-        name = stem
-    elif not isinstance(name, str):
-        return jsonify({'success': False, 'error': 'invalid name'}), 400
-    else:
-        name = name.strip()
-    description = data.get('description', '')
-    if not isinstance(description, str):
-        return jsonify({'success': False, 'error': 'invalid description'}), 400
+    display_name = _require_str(data, 'name', non_empty=True)
+    description = _require_str(data, 'description', non_empty=False)
+    version = _require_str(data, 'version', non_empty=True)
+    created_by = _require_str(data, 'created_by', non_empty=False)
     now = utc_iso_timestamp()
     model_doc = {
         'meta': {
-            'name': name,
+            'name': display_name,
+            'technical_name': technical_name,
             'description': description,
             'created': now,
             'modified': now,
+            'version': version,
+            'created_by': created_by,
         },
         'entities': [],
         'relationships': [],
@@ -169,9 +156,9 @@ def api_create_model():
         jsonschema.validate(instance=layout_doc, schema=layout_schema)
     except jsonschema.ValidationError as e:
         logger.error('create_model validation failed: %s', e)
-        return jsonify({'success': False, 'error': str(e)}), 400
+        raise ApiError(str(e), 400)
     try:
-        wstem = working_stem(stem)
+        wstem = working_stem(technical_name)
         model_path = model_json_path(wstem)
         layout_path = layout_json_path(wstem)
         os.makedirs(LAYOUTS_DIR, exist_ok=True)
@@ -183,62 +170,43 @@ def api_create_model():
     except OSError as e:
         logger.error('create_model write failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
-    return jsonify({'success': True, 'stem': stem}), 200
+    return jsonify({'success': True, 'technical_name': technical_name}), 200
 
 
-def stem_from_open_model_json():
+def technical_name_from_open_json():
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return None, (jsonify({'success': False, 'error': 'expected JSON object'}), 400)
-    stem, why = parse_model_stem(data.get('model'))
-    if stem is None:
-        msg = 'invalid model' if why == 'unsafe' else 'missing or invalid model'
-        return None, (jsonify({'success': False, 'error': msg}), 400)
-    if is_working_stem(stem):
-        return None, (jsonify({'success': False, 'error': 'invalid model'}), 400)
-    if stem not in list_model_stems():
-        return None, (jsonify({'success': False, 'error': 'unknown model'}), 404)
-    return stem, None
+    tn = parse_technical_name_field(data)
+    if tn not in list_technical_names():
+        raise ApiError('unknown model', 404)
+    return tn
 
 
-def stem_from_save_model_json():
+def technical_name_from_save_model_json():
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return None, (jsonify({'success': False, 'error': 'expected JSON object'}), 400)
-    stem, why = parse_model_stem(data.get('model'))
-    if stem is None:
-        msg = 'invalid model' if why == 'unsafe' else 'missing or invalid model'
-        return None, (jsonify({'success': False, 'error': msg}), 400)
-    if is_working_stem(stem):
-        return None, (jsonify({'success': False, 'error': 'invalid model'}), 400)
-    wstem = working_stem(stem)
+    tn = parse_technical_name_field(data)
+    wstem = working_stem(tn)
     if not os.path.isfile(model_json_path(wstem)):
-        return None, (jsonify({
-            'success': False,
-            'error': 'no working copy; open or create the model first',
-        }), 400)
-    return stem, None
+        raise ApiError('no working copy; open or create the model first', 400)
+    return tn
 
 
 @app.route('/api/open_model', methods=['POST'])
 def api_open_model():
-    stem, err = stem_from_open_model_json()
-    if err:
-        return err
+    tn = technical_name_from_open_json()
     try:
-        src_model = model_json_path(stem)
-        dst_model = model_json_path(working_stem(stem))
+        src_model = model_json_path(tn)
+        dst_model = model_json_path(working_stem(tn))
         os.makedirs(LAYOUTS_DIR, exist_ok=True)
         shutil.copy2(src_model, dst_model)
-        src_layout = layout_json_path(stem)
-        dst_layout = layout_json_path(working_stem(stem))
+        src_layout = layout_json_path(tn)
+        dst_layout = layout_json_path(working_stem(tn))
         if os.path.isfile(src_layout):
             shutil.copy2(src_layout, dst_layout)
         else:
             with open(dst_layout, 'w', encoding='utf-8') as f:
                 json.dump({'layout': []}, f, indent=4, ensure_ascii=False)
-        logger.info('Opened model %s into working copy %s', stem, working_stem(stem))
-        return jsonify({'success': True, 'stem': stem}), 200
+        logger.info('Opened model %s into working copy %s', tn, working_stem(tn))
+        return jsonify({'success': True, 'technical_name': tn}), 200
     except OSError as e:
         logger.error('open_model failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -246,10 +214,8 @@ def api_open_model():
 
 @app.route('/api/save_model', methods=['POST'])
 def api_save_model():
-    stem, err = stem_from_save_model_json()
-    if err:
-        return err
-    wstem = working_stem(stem)
+    tn = technical_name_from_save_model_json()
+    wstem = working_stem(tn)
     try:
         with open('schemas/model.json') as f:
             model_schema = json.load(f)
@@ -269,12 +235,12 @@ def api_save_model():
             layout_doc = {'layout': []}
         jsonschema.validate(instance=layout_doc, schema=layout_schema)
         os.makedirs(LAYOUTS_DIR, exist_ok=True)
-        with open(model_json_path(stem), 'w', encoding='utf-8') as f:
+        with open(model_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(model_doc, f, indent=4, ensure_ascii=False)
-        with open(layout_json_path(stem), 'w', encoding='utf-8') as f:
+        with open(layout_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(layout_doc, f, indent=4, ensure_ascii=False)
-        logger.info('Saved model %s from working copy %s', stem, wstem)
-        return jsonify({'success': True, 'stem': stem}), 200
+        logger.info('Saved model %s from working copy %s', tn, wstem)
+        return jsonify({'success': True, 'technical_name': tn}), 200
     except jsonschema.ValidationError as e:
         logger.error('save_model validation failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -288,17 +254,15 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/list_models', methods=['GET'])
-def api_list_models():
-    return jsonify({'models': list_model_stems()})
+@app.route('/api/list_technical_names', methods=['GET'])
+def api_list_technical_names():
+    return jsonify({'technical_names': list_technical_names()})
 
 
 @app.route('/api/load_model', methods=['POST'])
 def api_load_model():
-    stem, err = stem_from_post_json()
-    if err:
-        return err
-    return load_model(stem)
+    path_stem = path_stem_from_load_json()
+    return load_model(path_stem)
 
 
 def load_model(stem):
@@ -321,10 +285,8 @@ def load_model(stem):
 
 @app.route('/api/load_layout', methods=['POST'])
 def api_load_layout():
-    stem, err = stem_from_post_json()
-    if err:
-        return err
-    return load_layout(stem)
+    path_stem = path_stem_from_load_json()
+    return load_layout(path_stem)
 
 
 def load_layout(stem):
@@ -350,12 +312,11 @@ def load_layout(stem):
 
 @app.route('/api/save_working_model', methods=['POST'])
 def api_save_working_model():
-    stem, err = stem_from_save_working_model_query()
-    if err:
-        return err
-    model_doc = request.get_json(silent=True)
+    data = request.get_json(silent=True)
+    path_stem = path_stem_from_envelope(data, require_working=True)
+    model_doc = data.get('model')
     if not isinstance(model_doc, dict):
-        return jsonify({'success': False, 'error': 'expected JSON object'}), 400
+        return jsonify({'success': False, 'error': 'missing or invalid model'}), 400
     if 'meta' not in model_doc:
         model_doc['meta'] = {}
     model_doc['meta']['modified'] = utc_iso_timestamp()
@@ -367,9 +328,9 @@ def api_save_working_model():
         logger.error('save_working_model validation failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 400
     try:
-        with open(model_json_path(stem), 'w', encoding='utf-8') as f:
+        with open(model_json_path(path_stem), 'w', encoding='utf-8') as f:
             json.dump(model_doc, f, indent=4, ensure_ascii=False)
-        logger.info('Saved working model %s', model_json_path(stem))
+        logger.info('Saved working model %s', model_json_path(path_stem))
         return jsonify({'success': True}), 200
     except OSError as e:
         logger.error('save_working_model write failed: %s', e)
@@ -378,11 +339,13 @@ def api_save_working_model():
 
 @app.route('/api/save_layout', methods=['POST'])
 def api_save_layout():
-    stem, err = stem_from_save_layout_query()
-    if err:
-        return err
-    layout_to_save = request.get_json()
-    return save_layout(layout_to_save, stem)
+    data = request.get_json(silent=True)
+    path_stem = path_stem_from_envelope(data)
+    layout_arr = data.get('layout')
+    if not isinstance(layout_arr, list):
+        return jsonify({'success': False, 'error': 'missing or invalid layout array'}), 400
+    layout_to_save = {'layout': layout_arr}
+    return save_layout(layout_to_save, path_stem)
 
 
 def save_layout(layout_to_save, stem):
