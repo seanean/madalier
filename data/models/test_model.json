@@ -74,9 +74,9 @@
       "child_entity_id": "entity-uuid-2",
       "child_attribute_id": "att-uuid-3",
       "parent_mandatory": true,
-      "parent_cardinality": "mandatory",
+      "parent_cardinality": "One",
       "child_mandatory": true,
-      "child_cardinality": "optional"
+      "child_cardinality": "One"
     }
   ]
 }
