@@ -76,7 +76,8 @@
       "parent_mandatory": true,
       "parent_cardinality": "One",
       "child_mandatory": true,
-      "child_cardinality": "One"
+      "child_cardinality": "One",
+      "cardinality": "1:1"
     }
   ]
 }

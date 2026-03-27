@@ -202,6 +202,16 @@
 								   
                             "Many"
                         ]
+                    },
+                    "cardinality" :{
+                        "description": "Overall cardinality of the relationship in format of '1:1', '1:M', 'M:1', 'M:M'.",
+                        "type": "string",
+                        "enum": [
+                            "1:1",
+                            "1:M",
+                            "M:1",
+                            "M:M"
+                        ]
                     }
                 },
                 "required": [
@@ -214,7 +224,8 @@
                     "parent_mandatory",
                     "parent_cardinality",
                     "child_mandatory",
-                    "child_cardinality"
+                    "child_cardinality",
+                    "cardinality"
                 ]
             }
         }
