@@ -21,6 +21,8 @@ const SCHEMA_DATA_TYPES = [
 ];
 /** Matches schemas/model.json key_type.enum (null = none) */
 const SCHEMA_KEY_TYPES = ['PRIMARY', 'FOREIGN', 'NATURAL'];
+/** schemas/model.json parent_cardinality / child_cardinality.enum */
+const SCHEMA_SIDE_CARDINALITY = ['One', 'Many'];
 
 let persistModelTimer = null;
 let detailsPersistErrorText = null;
@@ -157,6 +159,23 @@ function findEntityContainingAttribute(attributeId) {
         }
     }
     return null;
+}
+
+function findRelationshipById(id) {
+    const rels = model.relationships || [];
+    return rels.find((r) => r.relationship_id === id) ?? null;
+}
+
+function patchRelationshipEdgeData(rel) {
+    if (!cy) return;
+    const e = cy.getElementById(rel.relationship_id);
+    if (e.length === 0) return;
+    e.data('label', rel.cardinality ?? '');
+    e.data('cardinality', rel.cardinality);
+    e.data('parentMandatory', rel.parent_mandatory);
+    e.data('childMandatory', rel.child_mandatory);
+    e.data('parentCardinality', rel.parent_cardinality);
+    e.data('childCardinality', rel.child_cardinality);
 }
 
 function patchEntityLabelInCy(entityId, businessName) {
@@ -518,6 +537,150 @@ function renderAttributeDetails(attr) {
     root.appendChild(form);
 }
 
+function formatRecordValueForDetails(value) {
+    if (value === null) return { isJson: false, text: 'null' };
+    if (typeof value === 'string') {
+        return { isJson: false, text: value === '' ? '(empty)' : value };
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return { isJson: false, text: String(value) };
+    }
+    if (typeof value === 'object') {
+        return { isJson: true, text: JSON.stringify(value, null, 2) };
+    }
+    return { isJson: false, text: String(value) };
+}
+
+const RELATIONSHIP_EDITABLE_KEYS = new Set([
+    'child_cardinality',
+    'child_mandatory',
+    'parent_cardinality',
+    'parent_mandatory',
+]);
+
+/** Sets rel.cardinality to 1:1 / 1:M / M:1 / M:M from parent_cardinality and child_cardinality (One|Many). */
+function deriveRelationshipCardinality(rel) {
+    const p = rel.parent_cardinality === 'Many' ? 'M' : '1';
+    const c = rel.child_cardinality === 'Many' ? 'M' : '1';
+    rel.cardinality = `${p}:${c}`;
+}
+
+function renderRelationshipDetails(rel) {
+    const root = document.getElementById('details-content');
+    if (!root) return;
+    root.replaceChildren();
+    const banner = document.createElement('div');
+    banner.id = 'details-persist-message';
+    banner.className = 'details-persist-message';
+    banner.hidden = true;
+    root.appendChild(banner);
+    syncDetailsPersistBanner();
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Relationship';
+    root.appendChild(h3);
+
+    const form = document.createElement('div');
+    form.className = 'details-form';
+
+    function addBoolField(labelText, checked, onChange) {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = checked === true;
+        cb.addEventListener('change', () => {
+            onChange(cb.checked);
+            patchRelationshipEdgeData(rel);
+            schedulePersistWorkingModel();
+        });
+        appendDetailsFormField(form, labelText, cb);
+    }
+
+    function addSideCardinalitySelect(labelText, current, setField) {
+        const sel = document.createElement('select');
+        const list = SCHEMA_SIDE_CARDINALITY.includes(current)
+            ? SCHEMA_SIDE_CARDINALITY
+            : [...SCHEMA_SIDE_CARDINALITY, current].filter(Boolean);
+        for (const v of list) {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            if (v === current) opt.selected = true;
+            sel.appendChild(opt);
+        }
+        sel.addEventListener('change', () => {
+            setField(sel.value);
+            deriveRelationshipCardinality(rel);
+            cardinalityValueEl.textContent = rel.cardinality;
+            patchRelationshipEdgeData(rel);
+            schedulePersistWorkingModel();
+        });
+        appendDetailsFormField(form, labelText, sel);
+    }
+
+    const prevCardinality = rel.cardinality;
+    deriveRelationshipCardinality(rel);
+    if (prevCardinality !== rel.cardinality) {
+        patchRelationshipEdgeData(rel);
+        schedulePersistWorkingModel();
+    }
+    const cardinalityValueEl = document.createElement('div');
+    cardinalityValueEl.className = 'details-readonly-value';
+    cardinalityValueEl.textContent = rel.cardinality;
+
+    addSideCardinalitySelect('parent_cardinality', rel.parent_cardinality, (v) => {
+        rel.parent_cardinality = v;
+    });
+    addSideCardinalitySelect('child_cardinality', rel.child_cardinality, (v) => {
+        rel.child_cardinality = v;
+    });
+
+    const cardWrap = document.createElement('div');
+    cardWrap.className = 'details-field';
+    const cardLab = document.createElement('span');
+    cardLab.className = 'details-field-label';
+    cardLab.textContent = 'cardinality (derived)';
+    cardWrap.appendChild(cardLab);
+    cardWrap.appendChild(cardinalityValueEl);
+    form.appendChild(cardWrap);
+
+    addBoolField('child_mandatory', rel.child_mandatory, (v) => {
+        rel.child_mandatory = v;
+    });
+    addBoolField('parent_mandatory', rel.parent_mandatory, (v) => {
+        rel.parent_mandatory = v;
+    });
+
+    root.appendChild(form);
+
+    const otherKeys = Object.keys(rel)
+        .sort()
+        .filter((k) => !RELATIONSHIP_EDITABLE_KEYS.has(k) && k !== 'cardinality');
+    if (otherKeys.length > 0) {
+        const sub = document.createElement('h4');
+        sub.className = 'details-subheading';
+        sub.textContent = 'Other properties';
+        root.appendChild(sub);
+        const dl = document.createElement('dl');
+        dl.className = 'details-props';
+        for (const key of otherKeys) {
+            const dt = document.createElement('dt');
+            dt.textContent = key;
+            const dd = document.createElement('dd');
+            const fmt = formatRecordValueForDetails(rel[key]);
+            if (fmt.isJson) {
+                const pre = document.createElement('pre');
+                pre.textContent = fmt.text;
+                dd.appendChild(pre);
+            } else {
+                dd.textContent = fmt.text;
+            }
+            dl.appendChild(dt);
+            dl.appendChild(dd);
+        }
+        root.appendChild(dl);
+    }
+}
+
 function renderDetailsError(message) {
     const root = document.getElementById('details-content');
     if (!root) return;
@@ -537,7 +700,7 @@ function clearDetailsPane() {
     root.replaceChildren();
     const p = document.createElement('p');
     p.className = 'details-placeholder';
-    p.textContent = 'Select an entity or attribute on the diagram.';
+    p.textContent = 'Select an entity, attribute, or relationship on the diagram.';
     root.appendChild(p);
 }
 
@@ -690,6 +853,13 @@ function renderCy() {
             if (attr) renderAttributeDetails(attr);
             else renderDetailsError('Attribute not found in model.');
         }
+    });
+
+    cy.on('tap', 'edge', (evt) => {
+        if (evt.target.data('type') !== 'relationship') return;
+        const rel = findRelationshipById(evt.target.id());
+        if (rel) renderRelationshipDetails(rel);
+        else renderDetailsError('Relationship not found in model.');
     });
 
     if (!workspaceResizeInitialized) {

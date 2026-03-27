@@ -96,6 +96,24 @@
             color: #333;
         }
 
+        .details-pane h4.details-subheading {
+            margin: 0.75rem 0 0.35rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #555;
+        }
+
+        input[type="checkbox"].details-field-control {
+            width: auto;
+            align-self: flex-start;
+        }
+
+        .details-readonly-value {
+            font-size: 0.85rem;
+            color: #333;
+            margin-top: 0.15rem;
+        }
+
         .details-placeholder {
             margin: 0;
             font-size: 0.85rem;
@@ -360,7 +378,7 @@
             <aside class="details-pane" aria-label="Details">
                 <h2>Details</h2>
                 <div id="details-content">
-                    <p class="details-placeholder">Select an entity or attribute on the diagram.</p>
+                    <p class="details-placeholder">Select an entity, attribute, or relationship on the diagram.</p>
                 </div>
             </aside>
         </div>
