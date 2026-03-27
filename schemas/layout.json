@@ -18,11 +18,11 @@
                     },
                     "x_coord": {
                         "description": "X coordinate of where the entity is located visually.",
-                        "type": "integer"
+                        "type": "number"
                     },
                     "y_coord": {
                         "description": "Y coordinate of where the entity is located visually.",
-                        "type": "integer"
+                        "type": "number"
                     }
                 },
                 "required": [

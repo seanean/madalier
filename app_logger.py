@@ -1,6 +1,7 @@
 import logging
 import sys
 from datetime import datetime
+
 ###########################Logging Setup###########################
 
 def get_logger(name: str) -> logging.Logger:
@@ -11,7 +12,7 @@ def get_logger(name: str) -> logging.Logger:
 
     if not logger.handlers:
         # create fileHandler for logging to send data to file
-        file_handler = logging.FileHandler(datetime.now().strftime('%Y-%m-%d_%H-%M_qwirize.log'))
+        file_handler = logging.FileHandler(datetime.now().strftime('%Y-%m-%d_%H-%M_madalier.log'))
         file_handler.encoding = 'utf-8'
         file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 

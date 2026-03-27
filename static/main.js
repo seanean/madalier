@@ -3,11 +3,15 @@ const HEADER_H = 28;
 const ROW_H = 24;
 
 let model = {};
+let layout = {};
+let positions = {};
 let nodes = [];
 let edges = [];
+cy = undefined;
 
 async function pageInit(){
     await retrieveModel();
+    await retrieveLayout();
     modelToNodesEdges();
     console.log('Nodes created:', nodes.length); // Debug: check node count
     console.log('Edges created:', edges.length);
@@ -21,7 +25,21 @@ async function retrieveModel() {
         .then(res => res.json())
         .then(rJson => {
             model = rJson;
-        })
+        });
+}
+
+async function retrieveLayout() {
+    let apiStr = '/api/load_layout'
+    let reqInit = { method: 'GET' }
+    return fetch(apiStr, reqInit)
+        .then(res => res.json())
+        .then(rJson => {
+            layout = rJson;
+            positions = {};
+            for (const position of layout.layout) {
+                positions[position.entity_id] = { x : position.x_coord, y: position.y_coord }
+            }
+        });
 }
 
 function modelToNodesEdges() {
@@ -101,7 +119,7 @@ function modelToNodesEdges() {
 }
 
 function renderCy() {
-    const cy = cytoscape({
+    cy = cytoscape({
         container: document.getElementById('cy'),
         elements: {
             nodes: nodes,
@@ -109,22 +127,35 @@ function renderCy() {
         },
         style: cyStyle
     });
-
-    cy.layout({
-        name: 'dagre',
-        rankDir: 'LR',
-        nodeSep: 40,
-        rankSep: 120,
-        padding: 40,
-        nodeDimensionsIncludeLabels: false,
-        animate: false
-    }).run();
+    
+    if (layout && layout.layout.length > 0 ){
+        cy.batch(() => {
+            cy.nodes('[type = "entity"]').forEach(ent => {
+                ent.position(positions[ent.id()]);
+            });
+        });
+    }
+    else {
+        console.log('here also');
+        cy.layout({
+            name: 'dagre',
+            rankDir: 'LR',
+            nodeSep: 40,
+            rankSep: 120,
+            padding: 40,
+            nodeDimensionsIncludeLabels: false,
+            animate: false
+        }).run();
+    }
 
     cy.nodes('[type = "entity"]').forEach(ent => cyPositionAttributes(ent));
 
     cy.on('dragfree','node[type = "entity"]', (evt) => {
         console.log();
-        if(evt.target.data('type') === 'entity') { cyPositionAttributes(evt.target);}
+        if(evt.target.data('type') === 'entity') { 
+            cyPositionAttributes(evt.target);
+            saveLayout();
+        }
         else { return; }
     });
 
@@ -151,7 +182,27 @@ function cyPositionAttributes(ent){
     });   
 }
 
+function saveLayout(){
+    let layout_arr = [];
+    const LayoutData = cy.nodes('[type = "entity"]').forEach(ent => {
+        layout_arr.push(
+            {
+                entity_id: ent.id(),
+                x_coord: ent.position('x'),
+                y_coord: ent.position('y')
+            }
+        );
+    });
 
+    let apiStr = '/api/save_layout';
+    let reqInit = {
+                method: 'POST'
+                , headers: { 'Content-Type': 'application/json' }
+                , body: JSON.stringify({ layout : layout_arr })
+    }
+    
+    fetch(apiStr, reqInit);
+}
 
 const cyStyle = [
     {
