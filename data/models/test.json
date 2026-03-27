@@ -67,7 +67,8 @@
         "created": "2026-03-26T20:49:25.004Z",
         "description": "sample string",
         "modified": "2026-03-27T17:22:18.209191Z",
-        "name": "test",
+        "name": "Test",
+        "technical_name": "test",
         "version": "1.0.0",
         "created_by": "John Doe"
     },

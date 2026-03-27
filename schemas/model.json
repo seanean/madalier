@@ -13,6 +13,10 @@
                     "description": "Name of the data model.",
                     "type": "string"
                 },
+                "technical_name": {
+                    "description": "Technical name of the data model in lower_snake_case.",
+                    "type": "string"
+                },
                 "description": {
                     "description": "Description of the data model.",
                     "type": "string"
@@ -36,9 +40,12 @@
             },
             "required": [
                 "name",
+                "technical_name",
                 "description",
                 "created",
-                "modified"
+                "modified",
+                "version",
+                "created_by"
             ]
         },
         "entities": {
