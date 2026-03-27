@@ -142,6 +142,65 @@
             display: flex;
             justify-content: flex-end;
         }
+
+        .new-model-dialog {
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 0;
+            min-width: 320px;
+        }
+
+        .new-model-dialog::backdrop {
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .new-model-dialog header {
+            padding: 0.65rem 0.75rem;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .new-model-dialog .dialog-body {
+            padding: 0.75rem;
+        }
+
+        .new-model-dialog label {
+            display: block;
+            font-size: 0.85rem;
+            margin-bottom: 0.2rem;
+            color: #333;
+        }
+
+        .new-model-dialog input,
+        .new-model-dialog textarea {
+            width: 100%;
+            box-sizing: border-box;
+            font: inherit;
+            padding: 0.4rem 0.5rem;
+            margin-bottom: 0.65rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .new-model-dialog textarea {
+            min-height: 3.5rem;
+            resize: vertical;
+        }
+
+        .new-model-dialog .field-hint {
+            font-size: 0.75rem;
+            color: #666;
+            margin: -0.45rem 0 0.5rem;
+        }
+
+        .new-model-dialog footer {
+            padding: 0.5rem 0.75rem;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
     </style>
     <script src="../static/cytoscape.min.js"></script>
     <script src="../static/dagre.min.js"></script>
@@ -151,7 +210,7 @@
 
 <body>
     <header class="app-header" role="banner">
-        <button type="button">New model</button>
+        <button type="button" id="new-model-btn">New model</button>
         <button type="button" id="open-model-btn">Open model</button>
         <button type="button">Save model</button>
         <button type="button">Add entity</button>
@@ -182,6 +241,26 @@
         <footer>
             <button type="button" id="open-model-cancel">Cancel</button>
         </footer>
+    </dialog>
+
+    <dialog id="new-model-dialog" class="new-model-dialog" aria-labelledby="new-model-dialog-title">
+        <header id="new-model-dialog-title">New model</header>
+        <form class="dialog-body" id="new-model-form">
+            <label for="new-model-stem">File name</label>
+            <input type="text" id="new-model-stem" name="stem" required autocomplete="off"
+                placeholder="e.g. customer_warehouse" pattern="[^/\\]+" maxlength="200">
+            <p class="field-hint">Saved as data/models/&lt;name&gt;.json and a matching layout file.</p>
+            <label for="new-model-display-name">Display name (optional)</label>
+            <input type="text" id="new-model-display-name" name="name" autocomplete="off" maxlength="500"
+                placeholder="Defaults to file name">
+            <label for="new-model-description">Description (optional)</label>
+            <textarea id="new-model-description" name="description" maxlength="4000"
+                placeholder="Short description"></textarea>
+            <footer>
+                <button type="button" id="new-model-cancel">Cancel</button>
+                <button type="submit" id="new-model-submit">Create</button>
+            </footer>
+        </form>
     </dialog>
 </body>
 

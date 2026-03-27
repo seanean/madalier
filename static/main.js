@@ -101,7 +101,9 @@ async function openModel() {
 function modelToNodesEdges() {
     nodes = [];
     edges = [];
-    for (const ent of model.entities) {
+    const entities = model.entities || [];
+    const relationships = model.relationships || [];
+    for (const ent of entities) {
         nodes.push(
             {
                 data: {
@@ -153,7 +155,7 @@ function modelToNodesEdges() {
         }
     }
 
-    for (const rel of model.relationships) {
+    for (const rel of relationships) {
         edges.push(
             {
                 data: {
@@ -393,6 +395,66 @@ const cyStyle = [
     }
     
 ];
+function resetNewModelForm() {
+    const form = document.getElementById('new-model-form');
+    if (form) form.reset();
+}
+
+function openNewModelDialog() {
+    resetNewModelForm();
+    const dialog = document.getElementById('new-model-dialog');
+    dialog?.showModal();
+    queueMicrotask(() => document.getElementById('new-model-stem')?.focus());
+}
+
+async function submitNewModel(ev) {
+    ev.preventDefault();
+    const stemInput = document.getElementById('new-model-stem');
+    const nameInput = document.getElementById('new-model-display-name');
+    const descInput = document.getElementById('new-model-description');
+    const submitBtn = document.getElementById('new-model-submit');
+    const dialog = document.getElementById('new-model-dialog');
+    if (!stemInput || !dialog) return;
+    const stem = stemInput.value.trim();
+    if (!stem) {
+        alert('Enter a file name.');
+        return;
+    }
+    const nameVal = nameInput?.value.trim() ?? '';
+    const description = descInput?.value ?? '';
+    const body = {
+        stem,
+        description,
+    };
+    if (nameVal) body.name = nameVal;
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+        const res = await fetch('/api/create_model', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            alert(data.error || res.statusText || 'Could not create model.');
+            return;
+        }
+        dialog.close();
+        await loadModelAndRender(data.stem);
+    } catch (e) {
+        console.error(e);
+        alert(e.message || 'Could not create model.');
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
+document.getElementById('new-model-btn')?.addEventListener('click', () => openNewModelDialog());
+document.getElementById('new-model-form')?.addEventListener('submit', (ev) => submitNewModel(ev));
+document.getElementById('new-model-cancel')?.addEventListener('click', () => {
+    document.getElementById('new-model-dialog')?.close();
+});
+
 document.getElementById('open-model-btn')?.addEventListener('click', () => openModel());
 document.getElementById('open-model-cancel')?.addEventListener('click', () => {
     document.getElementById('open-model-dialog')?.close();
