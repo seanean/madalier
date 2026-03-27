@@ -144,6 +144,48 @@
             max-height: 40vh;
         }
 
+        .details-persist-message {
+            font-size: 0.8rem;
+            margin: 0 0 0.5rem;
+            padding: 0.4rem 0.5rem;
+            border-radius: 4px;
+            line-height: 1.35;
+        }
+
+        .details-persist-message.is-error {
+            background: #ffe8e5;
+            border: 1px solid #e0a098;
+            color: #6b1c12;
+        }
+
+        .details-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .details-field-label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 0.2rem;
+        }
+
+        .details-field-control {
+            width: 100%;
+            box-sizing: border-box;
+            font: inherit;
+            padding: 0.35rem 0.45rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .details-field textarea.details-field-control {
+            resize: vertical;
+            min-height: 4rem;
+        }
+
         .open-model-dialog {
             border: 1px solid #ccc;
             border-radius: 6px;

@@ -12,6 +12,19 @@ let canonicalModelStem = null;
 let workspaceResizeInitialized = false;
 cy = undefined;
 
+/** Matches [schemas/model.json](schemas/model.json) entity_type.enum */
+const SCHEMA_ENTITY_TYPES = ['view', 'table'];
+/** Matches schemas/model.json attributes.items.properties.data_type.enum */
+const SCHEMA_DATA_TYPES = [
+    'STRING', 'TEXT', 'INTEGER', 'BIGINT', 'SMALLINT', 'DECIMAL', 'FLOAT',
+    'BOOLEAN', 'DATE', 'TIMESTAMP', 'BINARY',
+];
+/** Matches schemas/model.json key_type.enum (null = none) */
+const SCHEMA_KEY_TYPES = ['PRIMARY', 'FOREIGN', 'NATURAL'];
+
+let persistModelTimer = null;
+let detailsPersistErrorText = null;
+
 function workingStemForCanonical(stem) {
     return stem ? `temp_${stem}` : null;
 }
@@ -49,6 +62,8 @@ async function retrieveLayout(stem) {
 }
 
 async function loadWorkingCopyAndRender(canonicalStem) {
+    clearTimeout(persistModelTimer);
+    persistModelTimer = null;
     canonicalModelStem = canonicalStem;
     const ws = workingStemForCanonical(canonicalStem);
     await retrieveModel(ws);
@@ -133,46 +148,283 @@ function findAttributeById(id) {
     return null;
 }
 
-function formatValueForDisplay(value) {
-    if (value === null) return { isJson: false, text: 'null' };
-    if (typeof value === 'string') {
-        return { isJson: false, text: value === '' ? '(empty)' : value };
+function patchEntityLabelInCy(entityId, businessName) {
+    if (!cy) return;
+    const label = businessName ?? '';
+    const ent = cy.getElementById(entityId);
+    if (ent.nonempty()) {
+        ent.data('label', label);
+        ent.data('businessName', label);
     }
-    if (typeof value === 'number' || typeof value === 'boolean') {
-        return { isJson: false, text: String(value) };
+    const hdr = cy.getElementById(`${entityId}_hdr`);
+    if (hdr.nonempty()) {
+        hdr.data('label', label);
+        hdr.data('businessName', label);
     }
-    if (typeof value === 'object') {
-        return { isJson: true, text: JSON.stringify(value, null, 2) };
-    }
-    return { isJson: false, text: String(value) };
 }
 
-function renderDetailsPane(kind, record) {
+function patchAttributeLabelInCy(attributeId, businessName) {
+    if (!cy) return;
+    const n = cy.getElementById(attributeId);
+    if (n.nonempty()) {
+        n.data('label', businessName ?? '');
+        n.data('businessName', businessName ?? '');
+    }
+}
+
+function syncDetailsPersistBanner() {
+    const el = document.getElementById('details-persist-message');
+    if (!el) return;
+    if (detailsPersistErrorText) {
+        el.hidden = false;
+        el.textContent = detailsPersistErrorText;
+        el.className = 'details-persist-message is-error';
+    } else {
+        el.hidden = true;
+        el.textContent = '';
+        el.className = 'details-persist-message';
+    }
+}
+
+function schedulePersistWorkingModel() {
+    clearTimeout(persistModelTimer);
+    persistModelTimer = setTimeout(() => {
+        persistModelTimer = null;
+        persistWorkingModel();
+    }, 450);
+}
+
+/** Persists in-memory `model` to temp_<stem>.json. Returns whether the write succeeded. */
+async function persistWorkingModel() {
+    if (!canonicalModelStem) return true;
+    const ws = workingStemForCanonical(canonicalModelStem);
+    if (!ws) return true;
+    const q = new URLSearchParams({ model: ws });
+    try {
+        const res = await fetch(`/api/save_working_model?${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(model),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            detailsPersistErrorText = data.error || res.statusText || 'Save failed';
+            syncDetailsPersistBanner();
+            return false;
+        }
+        detailsPersistErrorText = null;
+        syncDetailsPersistBanner();
+        return true;
+    } catch (e) {
+        console.error(e);
+        detailsPersistErrorText = e.message || 'Save failed';
+        syncDetailsPersistBanner();
+        return false;
+    }
+}
+
+function appendDetailsFormField(form, labelText, control) {
+    const wrap = document.createElement('div');
+    wrap.className = 'details-field';
+    const lab = document.createElement('label');
+    lab.className = 'details-field-label';
+    lab.textContent = labelText;
+    wrap.appendChild(lab);
+    control.classList.add('details-field-control');
+    wrap.appendChild(control);
+    form.appendChild(wrap);
+}
+
+function renderEntityDetails(ent) {
     const root = document.getElementById('details-content');
     if (!root) return;
     root.replaceChildren();
+    const banner = document.createElement('div');
+    banner.id = 'details-persist-message';
+    banner.className = 'details-persist-message';
+    banner.hidden = true;
+    root.appendChild(banner);
+    syncDetailsPersistBanner();
+
     const h3 = document.createElement('h3');
-    h3.textContent = kind;
+    h3.textContent = 'Entity';
     root.appendChild(h3);
-    const dl = document.createElement('dl');
-    dl.className = 'details-props';
-    const keys = Object.keys(record).sort();
-    for (const key of keys) {
-        const dt = document.createElement('dt');
-        dt.textContent = key;
-        const dd = document.createElement('dd');
-        const fmt = formatValueForDisplay(record[key]);
-        if (fmt.isJson) {
-            const pre = document.createElement('pre');
-            pre.textContent = fmt.text;
-            dd.appendChild(pre);
-        } else {
-            dd.textContent = fmt.text;
-        }
-        dl.appendChild(dt);
-        dl.appendChild(dd);
+
+    const form = document.createElement('div');
+    form.className = 'details-form';
+
+    const inpBusiness = document.createElement('input');
+    inpBusiness.type = 'text';
+    inpBusiness.value = ent.business_name ?? '';
+    inpBusiness.addEventListener('input', () => {
+        ent.business_name = inpBusiness.value;
+        patchEntityLabelInCy(ent.entity_id, ent.business_name);
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'business_name', inpBusiness);
+
+    const taDef = document.createElement('textarea');
+    taDef.rows = 4;
+    taDef.value = ent.definition ?? '';
+    taDef.addEventListener('input', () => {
+        ent.definition = taDef.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'definition', taDef);
+
+    const selType = document.createElement('select');
+    const currentType = ent.entity_type;
+    const types = SCHEMA_ENTITY_TYPES.includes(currentType)
+        ? SCHEMA_ENTITY_TYPES
+        : [...SCHEMA_ENTITY_TYPES, currentType].filter(Boolean);
+    for (const v of types) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        if (v === currentType) opt.selected = true;
+        selType.appendChild(opt);
     }
-    root.appendChild(dl);
+    selType.addEventListener('change', () => {
+        ent.entity_type = selType.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'entity_type', selType);
+
+    root.appendChild(form);
+}
+
+function parseOptionalIntField(attr, key, raw) {
+    const t = String(raw).trim();
+    if (t === '') {
+        delete attr[key];
+        return;
+    }
+    const n = parseInt(t, 10);
+    if (!Number.isNaN(n)) {
+        attr[key] = n;
+    }
+}
+
+function clearPrecisionScaleUnlessDecimal(attr) {
+    if (attr.data_type !== 'DECIMAL') {
+        delete attr.precision;
+        delete attr.scale;
+    }
+}
+
+function renderAttributeDetails(attr) {
+    clearPrecisionScaleUnlessDecimal(attr);
+
+    const root = document.getElementById('details-content');
+    if (!root) return;
+    root.replaceChildren();
+    const banner = document.createElement('div');
+    banner.id = 'details-persist-message';
+    banner.className = 'details-persist-message';
+    banner.hidden = true;
+    root.appendChild(banner);
+    syncDetailsPersistBanner();
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Attribute';
+    root.appendChild(h3);
+
+    const form = document.createElement('div');
+    form.className = 'details-form';
+
+    const inpBusiness = document.createElement('input');
+    inpBusiness.type = 'text';
+    inpBusiness.value = attr.business_name ?? '';
+    inpBusiness.addEventListener('input', () => {
+        attr.business_name = inpBusiness.value;
+        patchAttributeLabelInCy(attr.attribute_id, attr.business_name);
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'business_name', inpBusiness);
+
+    const taDef = document.createElement('textarea');
+    taDef.rows = 4;
+    taDef.value = attr.definition ?? '';
+    taDef.addEventListener('input', () => {
+        attr.definition = taDef.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'definition', taDef);
+
+    const inpMap = document.createElement('input');
+    inpMap.type = 'text';
+    inpMap.value = attr.source_mapping ?? '';
+    inpMap.addEventListener('input', () => {
+        attr.source_mapping = inpMap.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'source_mapping', inpMap);
+
+    const selData = document.createElement('select');
+    const currentDt = attr.data_type;
+    const dts = SCHEMA_DATA_TYPES.includes(currentDt)
+        ? SCHEMA_DATA_TYPES
+        : [...SCHEMA_DATA_TYPES, currentDt].filter(Boolean);
+    for (const v of dts) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        if (v === currentDt) opt.selected = true;
+        selData.appendChild(opt);
+    }
+    selData.addEventListener('change', () => {
+        attr.data_type = selData.value;
+        clearPrecisionScaleUnlessDecimal(attr);
+        schedulePersistWorkingModel();
+        renderAttributeDetails(attr);
+    });
+    appendDetailsFormField(form, 'data_type', selData);
+
+    if (attr.data_type === 'DECIMAL') {
+        const inpPrec = document.createElement('input');
+        inpPrec.type = 'text';
+        inpPrec.inputMode = 'numeric';
+        inpPrec.value =
+            attr.precision !== undefined && attr.precision !== null ? String(attr.precision) : '';
+        inpPrec.addEventListener('input', () => {
+            parseOptionalIntField(attr, 'precision', inpPrec.value);
+            schedulePersistWorkingModel();
+        });
+        appendDetailsFormField(form, 'precision', inpPrec);
+
+        const inpScale = document.createElement('input');
+        inpScale.type = 'text';
+        inpScale.inputMode = 'numeric';
+        inpScale.value =
+            attr.scale !== undefined && attr.scale !== null ? String(attr.scale) : '';
+        inpScale.addEventListener('input', () => {
+            parseOptionalIntField(attr, 'scale', inpScale.value);
+            schedulePersistWorkingModel();
+        });
+        appendDetailsFormField(form, 'scale', inpScale);
+    }
+
+    const selKey = document.createElement('select');
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(none)';
+    noneOpt.selected = attr.key_type === null || attr.key_type === undefined;
+    selKey.appendChild(noneOpt);
+    for (const v of SCHEMA_KEY_TYPES) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        if (attr.key_type === v) opt.selected = true;
+        selKey.appendChild(opt);
+    }
+    selKey.addEventListener('change', () => {
+        const v = selKey.value;
+        attr.key_type = v === '' ? null : v;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'key_type', selKey);
+
+    root.appendChild(form);
 }
 
 function renderDetailsError(message) {
@@ -186,6 +438,9 @@ function renderDetailsError(message) {
 }
 
 function clearDetailsPane() {
+    detailsPersistErrorText = null;
+    clearTimeout(persistModelTimer);
+    persistModelTimer = null;
     const root = document.getElementById('details-content');
     if (!root) return;
     root.replaceChildren();
@@ -207,7 +462,7 @@ function modelToNodesEdges() {
                     label: ent.business_name,
                     id: ent.entity_id,
                     businessName: ent.business_name,
-                    technicalName: ent.technicalName,
+                    technicalName: ent.technical_name,
                     entityType: ent.entity_type,
                     definition: ent.definition,
                     type: 'entity',
@@ -221,7 +476,7 @@ function modelToNodesEdges() {
                     label: ent.business_name,
                     id: ent.entity_id + '_hdr',
                     businessName: ent.business_name,
-                    technicalName: ent.technicalName,
+                    technicalName: ent.technical_name,
                     entityType: ent.entity_type,
                     definition: ent.definition,
                     parent: ent.entity_id,
@@ -236,12 +491,12 @@ function modelToNodesEdges() {
                         label: attr.business_name,
                         id: attr.attribute_id,
                         businessName: attr.business_name,
-                        technicalName: attr.technicalName,
+                        technicalName: attr.technical_name,
                         dataType: attr.data_type,
                         precision: (attr.precision === undefined) ? undefined : attr.precision,
                         scale: (attr.scale === undefined) ? undefined : attr.scale,
                         keyType: attr.key_type,
-                        sourceMapping: attr.entity_type,
+                        sourceMapping: attr.source_mapping,
                         definition: attr.definition,
                         parent: ent.entity_id,
                         type: 'attribute',
@@ -336,11 +591,11 @@ function renderCy() {
         const nodeType = evt.target.data('type');
         if (nodeType === 'entity') {
             const ent = findEntityById(evt.target.id());
-            if (ent) renderDetailsPane('Entity', ent);
+            if (ent) renderEntityDetails(ent);
             else renderDetailsError('Entity not found in model.');
         } else if (nodeType === 'attribute') {
             const attr = findAttributeById(evt.target.id());
-            if (attr) renderDetailsPane('Attribute', attr);
+            if (attr) renderAttributeDetails(attr);
             else renderDetailsError('Attribute not found in model.');
         }
     });
@@ -580,6 +835,17 @@ document.getElementById('open-model-cancel')?.addEventListener('click', () => {
 async function saveCanonicalModel() {
     if (!canonicalModelStem) {
         alert('Open or create a model first.');
+        return;
+    }
+    clearTimeout(persistModelTimer);
+    persistModelTimer = null;
+    const flushed = await persistWorkingModel();
+    if (!flushed) {
+        alert(
+            detailsPersistErrorText
+                ? `Could not save working copy: ${detailsPersistErrorText}`
+                : 'Could not save working copy.',
+        );
         return;
     }
     const btn = document.getElementById('save-model-btn');

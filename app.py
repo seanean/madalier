@@ -108,6 +108,26 @@ def stem_from_save_layout_query():
     return stem, None
 
 
+def stem_from_save_working_model_query():
+    """Working copy only (temp_*), file must exist on disk."""
+    raw = request.args.get('model', type=str)
+    if raw is None:
+        return None, (jsonify({'success': False, 'error': 'missing model query parameter'}), 400)
+    stem, why = parse_model_stem(raw)
+    if stem is None:
+        if why == 'empty':
+            return None, (jsonify({'success': False, 'error': 'missing model query parameter'}), 400)
+        return None, (jsonify({'success': False, 'error': 'invalid model'}), 400)
+    if not is_working_stem(stem):
+        return None, (jsonify({
+            'success': False,
+            'error': 'model query must be a working copy (temp_<name>)',
+        }), 400)
+    if not os.path.isfile(model_json_path(stem)):
+        return None, (jsonify({'success': False, 'error': 'unknown model'}), 404)
+    return stem, None
+
+
 def utc_iso_timestamp():
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
@@ -326,6 +346,34 @@ def load_layout(stem):
     except Exception as e:
         logger.error('Layout schema validation failed with exception: %s', e)
     return jsonify(data)
+
+
+@app.route('/api/save_working_model', methods=['POST'])
+def api_save_working_model():
+    stem, err = stem_from_save_working_model_query()
+    if err:
+        return err
+    model_doc = request.get_json(silent=True)
+    if not isinstance(model_doc, dict):
+        return jsonify({'success': False, 'error': 'expected JSON object'}), 400
+    if 'meta' not in model_doc:
+        model_doc['meta'] = {}
+    model_doc['meta']['modified'] = utc_iso_timestamp()
+    try:
+        with open('schemas/model.json') as f:
+            model_schema = json.load(f)
+        jsonschema.validate(instance=model_doc, schema=model_schema)
+    except jsonschema.ValidationError as e:
+        logger.error('save_working_model validation failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+    try:
+        with open(model_json_path(stem), 'w', encoding='utf-8') as f:
+            json.dump(model_doc, f, indent=4, ensure_ascii=False)
+        logger.info('Saved working model %s', model_json_path(stem))
+        return jsonify({'success': True}), 200
+    except OSError as e:
+        logger.error('save_working_model write failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/save_layout', methods=['POST'])
