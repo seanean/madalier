@@ -201,10 +201,11 @@ function drawErEndpoint(ctx, x, y, angleRad, many, optional) {
             drawPerpBar(ER_BAR_OUTER_X, 2.75);
         }
     } else if (optional) {
-        /* O| — circle outward, single bar toward entity */
+        /* O| — circle outward (+x), single bar toward entity; circle x must clear bar so | and o do not overlap */
+        const optionalOneCircleX = ER_BAR_INNER_X + rO + 3;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(8, 0, rO, 0, Math.PI * 2);
+        ctx.arc(optionalOneCircleX, 0, rO, 0, Math.PI * 2);
         ctx.stroke();
         drawPerpBar(ER_BAR_INNER_X, 2);
     } else {
