@@ -27,12 +27,28 @@ function measureLabelWidth(text) {
     return ctx.measureText(t).width;
 }
 
+function displayNameForEntityCard(ent) {
+    if (showTechnicalNamesInDiagram) {
+        const t = String(ent?.technical_name ?? '').trim();
+        if (t) return t;
+    }
+    return String(ent?.business_name ?? '');
+}
+
+function displayNameForAttributeCard(attr) {
+    if (showTechnicalNamesInDiagram) {
+        const t = String(attr?.technical_name ?? '').trim();
+        if (t) return t;
+    }
+    return String(attr?.business_name ?? '');
+}
+
 function computeCardWidthForEntity(ent) {
-    const nameW = measureLabelWidth(ent?.business_name ?? '');
+    const nameW = measureLabelWidth(displayNameForEntityCard(ent));
     const attrs = ent?.attributes || [];
     let maxAttrW = 0;
     for (const a of attrs) {
-        maxAttrW = Math.max(maxAttrW, measureLabelWidth(a?.business_name ?? ''));
+        maxAttrW = Math.max(maxAttrW, measureLabelWidth(displayNameForAttributeCard(a)));
     }
     const contentW = attrs.length === 0 ? nameW : Math.max(nameW, maxAttrW);
     return Math.max(MIN_CARD_WIDTH, Math.ceil(contentW + CARD_H_PADDING));
@@ -271,6 +287,8 @@ let nodes = [];
 let edges = [];
 /** Canonical meta.technical_name; files are &lt;technical_name&gt;.json and temp_&lt;technical_name&gt; while editing. */
 let canonicalTechnicalName = null;
+/** When true, diagram entity/attribute labels use technical_name instead of business_name. */
+let showTechnicalNamesInDiagram = false;
 let workspaceResizeInitialized = false;
 let cy;
 
@@ -744,6 +762,7 @@ async function loadWorkingCopyAndRender(technicalName) {
     syncAddAttributeButtonState();
     syncAddRelationshipButtonState();
     syncRemoveSelectedButtonState();
+    syncShowTechnicalNamesButton();
     preservedCyViewport = null;
     fitCyViewportAfterNextRender = false;
     if (cy) {
@@ -984,28 +1003,69 @@ function patchRelationshipEdgeData(rel) {
     scheduleErOverlayRedraw();
 }
 
+function effectiveDiagramLabel(businessName, technicalName) {
+    if (showTechnicalNamesInDiagram) {
+        const t = String(technicalName ?? '').trim();
+        if (t) return t;
+    }
+    return String(businessName ?? '');
+}
+
+function syncCyLabelsToDisplayMode() {
+    if (!cy) return;
+    cy.batch(() => {
+        cy.nodes('[type = "entity"], [type = "entity-header"], [type = "attribute"]').forEach((n) => {
+            const biz = n.data('businessName');
+            const tech = n.data('technicalName');
+            n.data('label', effectiveDiagramLabel(biz, tech));
+        });
+    });
+    for (const ent of model.entities || []) {
+        syncEntityCardWidthInCy(ent.entity_id);
+    }
+    cy.style().update();
+    scheduleErOverlayRedraw();
+}
+
+function syncShowTechnicalNamesButton() {
+    const btn = document.getElementById('show-technical-names-btn');
+    if (!btn) return;
+    btn.disabled = !canonicalTechnicalName;
+    btn.textContent = showTechnicalNamesInDiagram ? 'Show business names' : 'Show technical names';
+    btn.setAttribute('aria-pressed', showTechnicalNamesInDiagram ? 'true' : 'false');
+}
+
 function patchEntityLabelInCy(entityId, businessName) {
     if (!cy) return;
-    const label = businessName ?? '';
+    const m = findEntityById(entityId);
+    const biz =
+        businessName !== undefined && businessName !== null ? businessName : (m?.business_name ?? '');
+    const tech = m?.technical_name ?? '';
+    const label = effectiveDiagramLabel(biz, tech);
     const ent = cy.getElementById(entityId);
     if (ent.nonempty()) {
         ent.data('label', label);
-        ent.data('businessName', label);
+        ent.data('businessName', String(biz ?? ''));
     }
     const hdr = cy.getElementById(`${entityId}_hdr`);
     if (hdr.nonempty()) {
         hdr.data('label', label);
-        hdr.data('businessName', label);
+        hdr.data('businessName', String(biz ?? ''));
     }
     syncEntityCardWidthInCy(entityId);
 }
 
 function patchAttributeLabelInCy(attributeId, businessName) {
     if (!cy) return;
+    const m = findAttributeById(attributeId);
+    const biz =
+        businessName !== undefined && businessName !== null ? businessName : (m?.business_name ?? '');
+    const tech = m?.technical_name ?? '';
+    const label = effectiveDiagramLabel(biz, tech);
     const n = cy.getElementById(attributeId);
     if (n.nonempty()) {
-        n.data('label', businessName ?? '');
-        n.data('businessName', businessName ?? '');
+        n.data('label', label);
+        n.data('businessName', String(biz ?? ''));
     }
     const ent = findEntityContainingAttribute(attributeId);
     if (ent) syncEntityCardWidthInCy(ent.entity_id);
@@ -1014,16 +1074,33 @@ function patchAttributeLabelInCy(attributeId, businessName) {
 function patchEntityTechnicalNameInCy(entityId, technicalName) {
     if (!cy) return;
     const t = technicalName ?? '';
+    const m = findEntityById(entityId);
+    const label = effectiveDiagramLabel(m?.business_name ?? '', t);
     const ent = cy.getElementById(entityId);
-    if (ent.nonempty()) ent.data('technicalName', t);
+    if (ent.nonempty()) {
+        ent.data('technicalName', t);
+        ent.data('label', label);
+    }
     const hdr = cy.getElementById(`${entityId}_hdr`);
-    if (hdr.nonempty()) hdr.data('technicalName', t);
+    if (hdr.nonempty()) {
+        hdr.data('technicalName', t);
+        hdr.data('label', label);
+    }
+    syncEntityCardWidthInCy(entityId);
 }
 
 function patchAttributeTechnicalNameInCy(attributeId, technicalName) {
     if (!cy) return;
     const n = cy.getElementById(attributeId);
-    if (n.nonempty()) n.data('technicalName', technicalName ?? '');
+    const m = findAttributeById(attributeId);
+    const t = technicalName ?? '';
+    const label = effectiveDiagramLabel(m?.business_name ?? '', t);
+    if (n.nonempty()) {
+        n.data('technicalName', t);
+        n.data('label', label);
+    }
+    const ent = findEntityContainingAttribute(attributeId);
+    if (ent) syncEntityCardWidthInCy(ent.entity_id);
 }
 
 function syncDetailsPersistBanner() {
@@ -2019,6 +2096,7 @@ function renderCy() {
     }
 
     setupErOverlay(cy);
+    syncCyLabelsToDisplayMode();
     scheduleErOverlayRedraw();
 
     if (!workspaceResizeInitialized) {
@@ -2730,6 +2808,13 @@ async function saveCanonicalModel() {
 
 document.getElementById('save-model-btn')?.addEventListener('click', () => saveCanonicalModel());
 
+document.getElementById('show-technical-names-btn')?.addEventListener('click', () => {
+    if (!canonicalTechnicalName) return;
+    showTechnicalNamesInDiagram = !showTechnicalNamesInDiagram;
+    syncShowTechnicalNamesButton();
+    syncCyLabelsToDisplayMode();
+});
+
 async function exportDiagramPng() {
     if (!canonicalTechnicalName || !cy) {
         alert('Open or create a model first.');
@@ -2778,6 +2863,7 @@ document.getElementById('export-diagram-btn')?.addEventListener('click', () => v
 initAddAttributeDataTypeSelect();
 syncAddRelationshipButtonState();
 syncRemoveSelectedButtonState();
+syncShowTechnicalNamesButton();
 wireAddRelationshipDialogControls();
 document.getElementById('remove-selected-btn')?.addEventListener('click', () => removeDiagramSelection());
 document.getElementById('add-entity-btn')?.addEventListener('click', () => openAddEntityDialog());
