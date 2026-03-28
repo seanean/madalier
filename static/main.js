@@ -36,16 +36,6 @@ function computeCardWidthForEntity(ent) {
     return Math.max(MIN_CARD_WIDTH, Math.ceil(contentW + CARD_H_PADDING));
 }
 
-/** ER line ends: parent side = edge source, child side = edge target. */
-function erArrowStyleForSide(cardinality, mandatory) {
-    const many = cardinality === 'Many';
-    const req = mandatory === true;
-    if (many) {
-        return { shape: 'vee', fill: req ? 'filled' : 'hollow' };
-    }
-    return { shape: req ? 'tee' : 'circle', fill: req ? 'filled' : 'hollow' };
-}
-
 function syncEntityCardWidthInCy(entityId) {
     if (!cy) return;
     const ent = findEntityById(entityId);
@@ -63,6 +53,213 @@ function syncEntityCardWidthInCy(entityId) {
         });
     });
     cy.style().update();
+}
+
+/** Crow's-foot / optional-or-mandatory symbols on a canvas over the diagram (built-in Cytoscape arrows are off). */
+/** Screen-space gap along the wire from the attribute edge so symbols do not sit inside the node box. */
+const ER_OVERLAY_OFFSET_PX = 20;
+let erOverlayRaf = null;
+let erOverlayTeardown = null;
+
+function teardownErOverlay() {
+    if (typeof erOverlayTeardown === 'function') {
+        erOverlayTeardown();
+        erOverlayTeardown = null;
+    }
+}
+
+function modelPosToRendered(cyInst, pos) {
+    const z = cyInst.zoom();
+    const pan = cyInst.pan();
+    return { x: pos.x * z + pan.x, y: pos.y * z + pan.y };
+}
+
+function vecLen(v) {
+    return Math.hypot(v.x, v.y);
+}
+
+function vecNorm(v) {
+    const L = vecLen(v);
+    if (L < 1e-9) return { x: 1, y: 0 };
+    return { x: v.x / L, y: v.y / L };
+}
+
+/** Unit direction along the wire leaving the source node (first segment from sourceEndpoint). */
+function edgeOutFromSource(edge) {
+    const se = edge.sourceEndpoint();
+    const te = edge.targetEndpoint();
+    let pts = [];
+    try {
+        pts = edge.segmentPoints() || [];
+    } catch {
+        pts = [];
+    }
+    for (let i = 0; i < pts.length; i++) {
+        const v = { x: pts[i].x - se.x, y: pts[i].y - se.y };
+        if (vecLen(v) > 1e-3) return vecNorm(v);
+    }
+    return vecNorm({ x: te.x - se.x, y: te.y - se.y });
+}
+
+/** Unit direction along the wire leaving the target node (toward source; last segment into targetEndpoint). */
+function edgeOutFromTarget(edge) {
+    const se = edge.sourceEndpoint();
+    const te = edge.targetEndpoint();
+    let pts = [];
+    try {
+        pts = edge.segmentPoints() || [];
+    } catch {
+        pts = [];
+    }
+    for (let k = pts.length - 1; k >= 0; k--) {
+        const v = { x: pts[k].x - te.x, y: pts[k].y - te.y };
+        if (vecLen(v) > 1e-3) return vecNorm(v);
+    }
+    return vecNorm({ x: se.x - te.x, y: se.y - te.y });
+}
+
+function offsetModelAlong(cyInst, pos, dir, pxWorld) {
+    const z = cyInst.zoom();
+    const d = pxWorld / Math.max(z, 1e-6);
+    return { x: pos.x + dir.x * d, y: pos.y + dir.y * d };
+}
+
+/**
+ * +x = along wire away from entity; −x = toward entity.
+ * Mandatory `|` bars sit at positive x so, scanning center → attribute, you see | then < (or || pairs).
+ * optional many O< | mandatory many |< | optional one O| | mandatory one ||
+ */
+function drawErEndpoint(ctx, x, y, angleRad, many, optional) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angleRad);
+    ctx.strokeStyle = '#444';
+    ctx.fillStyle = '#444';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const barH = 10;
+    const stem = 15;
+    const toe = 9;
+    const rO = 4.5;
+    /**
+     * Bars on +x: reading from the wire center toward the attribute (−x), you meet `|` then `<`.
+     * OUTER = further along the wire (larger +x); INNER = closer to the crow / attribute.
+     */
+    const ER_BAR_INNER_X = 5;
+    const ER_BAR_OUTER_X = 13;
+
+    function drawCrowFoot(lineW) {
+        ctx.lineWidth = lineW;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-stem, 0);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-stem, -toe);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-stem, toe);
+        ctx.stroke();
+    }
+
+    function drawPerpBar(x0, lineW) {
+        ctx.lineWidth = lineW;
+        ctx.beginPath();
+        ctx.moveTo(x0, -barH);
+        ctx.lineTo(x0, barH);
+        ctx.stroke();
+    }
+
+    if (many) {
+        if (optional) {
+            /* O< — circle on the wire outward (+x), then crow toward entity */
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(10, 0, rO, 0, Math.PI * 2);
+            ctx.stroke();
+            drawCrowFoot(2);
+        } else {
+            /* |< — crow at anchor; | on +x so order is | then < when moving center → attribute */
+            drawCrowFoot(2.75);
+            drawPerpBar(ER_BAR_OUTER_X, 2.75);
+        }
+    } else if (optional) {
+        /* O| — circle outward, single bar toward entity */
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(8, 0, rO, 0, Math.PI * 2);
+        ctx.stroke();
+        drawPerpBar(ER_BAR_INNER_X, 2);
+    } else {
+        /* || — inner then outer on +x; same spacing as |< outer bar */
+        drawPerpBar(ER_BAR_INNER_X, 2.75);
+        drawPerpBar(ER_BAR_OUTER_X, 2.75);
+    }
+    ctx.restore();
+}
+
+function syncErOverlayCanvasSize() {
+    const canvas = document.getElementById('cy-er-overlay');
+    const panel = document.querySelector('.diagram-panel');
+    if (!canvas || !panel) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.floor(panel.clientWidth));
+    const h = Math.max(1, Math.floor(panel.clientHeight));
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+}
+
+function scheduleErOverlayRedraw() {
+    if (erOverlayRaf != null) return;
+    erOverlayRaf = requestAnimationFrame(() => {
+        erOverlayRaf = null;
+        drawErRelationshipOverlay();
+    });
+}
+
+function drawErRelationshipOverlay() {
+    const panel = document.querySelector('.diagram-panel');
+    if (!panel || !cy) return;
+    const ctx = syncErOverlayCanvasSize();
+    if (!ctx) return;
+    ctx.clearRect(0, 0, panel.clientWidth + 1, panel.clientHeight + 1);
+
+    cy.edges('[type = "relationship"]').forEach((edge) => {
+        const se = edge.sourceEndpoint();
+        const te = edge.targetEndpoint();
+        const outS = edgeOutFromSource(edge);
+        const outT = edgeOutFromTarget(edge);
+
+        const posS = offsetModelAlong(cy, se, outS, ER_OVERLAY_OFFSET_PX);
+        const posT = offsetModelAlong(cy, te, outT, ER_OVERLAY_OFFSET_PX);
+        const rs = modelPosToRendered(cy, posS);
+        const rt = modelPosToRendered(cy, posT);
+        const angS = Math.atan2(outS.y, outS.x);
+        const angT = Math.atan2(outT.y, outT.x);
+
+        const manyP = edge.data('parentCardinality') === 'Many';
+        const optP = edge.data('parentMandatory') !== true;
+        const manyC = edge.data('childCardinality') === 'Many';
+        const optC = edge.data('childMandatory') !== true;
+
+        drawErEndpoint(ctx, rs.x, rs.y, angS, manyP, optP);
+        drawErEndpoint(ctx, rt.x, rt.y, angT, manyC, optC);
+    });
+}
+
+function setupErOverlay(cyInst) {
+    teardownErOverlay();
+    const onV = () => scheduleErOverlayRedraw();
+    cyInst.on('render', onV);
+    cyInst.on('viewport', onV);
+    erOverlayTeardown = () => {
+        cyInst.off('render', onV);
+        cyInst.off('viewport', onV);
+    };
 }
 
 let model = {};
@@ -541,6 +738,7 @@ async function loadWorkingCopyAndRender(technicalName) {
     preservedCyViewport = null;
     fitCyViewportAfterNextRender = false;
     if (cy) {
+        teardownErOverlay();
         cy.destroy();
         cy = undefined;
     }
@@ -707,6 +905,7 @@ function patchRelationshipEdgeData(rel) {
     e.data('parentCardinality', rel.parent_cardinality);
     e.data('childCardinality', rel.child_cardinality);
     cy.style().update();
+    scheduleErOverlayRedraw();
 }
 
 function patchEntityLabelInCy(entityId, businessName) {
@@ -1476,6 +1675,7 @@ function renderCy() {
         } else {
             preservedCyViewport = null;
         }
+        teardownErOverlay();
         cy.destroy();
         cy = undefined;
     }
@@ -1522,13 +1722,11 @@ function renderCy() {
         stabilizeStoredEntityPositionsInCy();
     }
 
-    cy.on('dragfree','node[type = "entity"]', (evt) => {
-        console.log();
-        if(evt.target.data('type') === 'entity') { 
+    cy.on('dragfree', 'node[type = "entity"]', (evt) => {
+        if (evt.target.data('type') === 'entity') {
             cyPositionAttributes(evt.target);
             saveLayout();
         }
-        else { return; }
     });
 
     cy.on('grab','node[type = "attribute"]', (evt) => {
@@ -1609,8 +1807,12 @@ function renderCy() {
             } catch {
                 /* ignore */
             }
+            scheduleErOverlayRedraw();
         });
     }
+
+    setupErOverlay(cy);
+    scheduleErOverlayRedraw();
 
     if (!workspaceResizeInitialized) {
         initWorkspaceResize();
@@ -1688,6 +1890,7 @@ function initWorkspaceResize() {
 
     const ro = new ResizeObserver(() => {
         if (cy) cy.resize();
+        scheduleErOverlayRedraw();
     });
     ro.observe(diagramPanel);
 }
@@ -1845,36 +2048,8 @@ const cyStyle = [
             'taxi-direction': 'horizontal',
             'taxi-turn': 50,
             'line-color': '#444',
-            'target-arrow-color': '#444',
-            'source-arrow-color': '#444',
-            'source-arrow-scale': 1.35,
-            'target-arrow-scale': 1.35,
-            'source-arrow-shape'(ele) {
-                const s = erArrowStyleForSide(
-                    ele.data('parentCardinality'),
-                    ele.data('parentMandatory'),
-                );
-                return s.shape;
-            },
-            'source-arrow-fill'(ele) {
-                return erArrowStyleForSide(
-                    ele.data('parentCardinality'),
-                    ele.data('parentMandatory'),
-                ).fill;
-            },
-            'target-arrow-shape'(ele) {
-                const s = erArrowStyleForSide(
-                    ele.data('childCardinality'),
-                    ele.data('childMandatory'),
-                );
-                return s.shape;
-            },
-            'target-arrow-fill'(ele) {
-                return erArrowStyleForSide(
-                    ele.data('childCardinality'),
-                    ele.data('childMandatory'),
-                ).fill;
-            },
+            'source-arrow-shape': 'none',
+            'target-arrow-shape': 'none',
             'font-family': DIAGRAM_FONT_FAMILY,
             'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
             'color': '#333',

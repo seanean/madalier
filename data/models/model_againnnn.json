@@ -81,47 +81,47 @@
             "technical_name": "nnjn_mm"
         },
         {
-            "entity_id": "8ca55e7d-c0f1-4ef1-8239-c15fd7e8c69e",
-            "business_name": "jnhkm",
-            "technical_name": "jnhkm",
-            "entity_type": "table",
-            "definition": "hbjnk",
             "attributes": [
                 {
                     "attribute_id": "732fc2e3-f1fc-41e4-9a4e-28c21a0cb3eb",
+                    "attribute_order": 1,
                     "business_name": "hnjkm",
-                    "technical_name": "hnjkm",
                     "data_type": "STRING",
                     "definition": "bhjnkm",
-                    "attribute_order": 1,
-                    "key_type": null
+                    "key_type": null,
+                    "technical_name": "hnjkm"
                 },
                 {
                     "attribute_id": "30b0ad85-6693-432b-aef5-136a9496ae08",
+                    "attribute_order": 2,
                     "business_name": "nbbbbbbbb",
-                    "technical_name": "nbbbbbbbb",
                     "data_type": "STRING",
                     "definition": "nnnnnnnnnnn",
-                    "attribute_order": 2,
-                    "key_type": null
+                    "key_type": null,
+                    "technical_name": "nbbbbbbbb"
                 }
-            ]
+            ],
+            "business_name": "jnhkm",
+            "definition": "hbjnk",
+            "entity_id": "8ca55e7d-c0f1-4ef1-8239-c15fd7e8c69e",
+            "entity_type": "table",
+            "technical_name": "jnhkm"
         }
     ],
     "meta": {
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-28T06:59:31.596230Z",
+        "modified": "2026-03-28T08:38:35.770638Z",
         "name": "MODEL AGAINNNN",
         "technical_name": "model_againnnn",
         "version": "1.0.0"
     },
     "relationships": [
         {
-            "cardinality": "1:1",
+            "cardinality": "1:M",
             "child_attribute_id": "a3000000-0000-4000-8000-000000000003",
-            "child_cardinality": "One",
+            "child_cardinality": "Many",
             "child_entity_id": "e2000000-0000-4000-8000-000000000002",
             "child_mandatory": true,
             "parent_attribute_id": "a1000000-0000-4000-8000-000000000001",
@@ -129,7 +129,7 @@
             "parent_entity_id": "e1000000-0000-4000-8000-000000000001",
             "parent_mandatory": true,
             "relationship_id": "7c2f8a91-3d4e-4b1c-9f6e-8a5d3c2b1e00",
-            "relationship_name": "entity_nm_1.col_one 1:1 entity_nm_2.col_one"
+            "relationship_name": "entity_nm.col_one 1:M entity_nm_2.col_one"
         }
     ]
 }
