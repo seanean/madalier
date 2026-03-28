@@ -2585,6 +2585,23 @@ document.getElementById('open-model-cancel')?.addEventListener('click', () => {
     document.getElementById('open-model-dialog')?.close();
 });
 
+async function captureDiagramPngBase64() {
+    if (!canonicalTechnicalName || !cy) {
+        return null;
+    }
+    const root = document.getElementById('diagram-export-root');
+    if (!root) return null;
+    cy.resize();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const dataUrl = await toPng(root, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        cacheBust: true,
+    });
+    const m = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+    return m ? m[1] : dataUrl;
+}
+
 async function saveCanonicalModel() {
     if (!canonicalTechnicalName) {
         alert('Open or create a model first.');
@@ -2607,9 +2624,18 @@ async function saveCanonicalModel() {
     const btn = document.getElementById('save-model-btn');
     if (btn) btn.disabled = true;
     try {
+        let pngBase64 = null;
+        try {
+            pngBase64 = await captureDiagramPngBase64();
+        } catch (e) {
+            console.warn('Diagram capture for save failed:', e);
+        }
         const saveBody = { technical_name: canonicalTechnicalName };
         if (openedAsTechnicalName && openedAsTechnicalName !== canonicalTechnicalName) {
             saveBody.supersede_technical_name = openedAsTechnicalName;
+        }
+        if (pngBase64) {
+            saveBody.png_base64 = pngBase64;
         }
         const res = await fetch('/api/save_model', {
             method: 'POST',
@@ -2644,20 +2670,14 @@ async function exportDiagramPng() {
         alert('Open or create a model first.');
         return;
     }
-    const root = document.getElementById('diagram-export-root');
-    if (!root) return;
     const btn = document.getElementById('export-diagram-btn');
     if (btn) btn.disabled = true;
     try {
-        cy.resize();
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const dataUrl = await toPng(root, {
-            pixelRatio: 2,
-            backgroundColor: '#ffffff',
-            cacheBust: true,
-        });
-        const m = dataUrl.match(/^data:image\/png;base64,(.+)$/);
-        const b64 = m ? m[1] : dataUrl;
+        const b64 = await captureDiagramPngBase64();
+        if (!b64) {
+            alert('Could not capture diagram.');
+            return;
+        }
         const res = await fetch('/api/save_diagram_png', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

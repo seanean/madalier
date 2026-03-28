@@ -241,6 +241,83 @@ def model_doc_to_csv_rows(model_doc):
     return rows
 
 
+def decode_request_png_base64(raw):
+    """Decode data URL or raw base64 PNG bytes. Raises ApiError if missing or invalid."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raise ApiError('png_base64 is required')
+    if not isinstance(raw, str):
+        raise ApiError('png_base64 must be a string')
+    s = raw.strip()
+    if s.startswith('data:') and ',' in s:
+        s = s.split(',', 1)[1]
+    try:
+        png_bytes = base64.b64decode(s, validate=True)
+    except binascii.Error:
+        raise ApiError('invalid base64')
+    if len(png_bytes) > MAX_DIAGRAM_PNG_BYTES:
+        raise ApiError('PNG too large')
+    if not png_bytes.startswith(PNG_MAGIC):
+        raise ApiError('not a PNG image')
+    return png_bytes
+
+
+def optional_decode_request_png_base64(raw):
+    """Like decode_request_png_base64, but returns None when the field is absent or blank."""
+    if raw is None:
+        return None
+    if isinstance(raw, str) and not raw.strip():
+        return None
+    return decode_request_png_base64(raw)
+
+
+def write_canonical_model_artifacts(model_doc, tn, png_bytes=None):
+    """
+    Write CSV, DDL trees, and optional diagram PNG under data/models/<tn>/.
+    Raises ApiError on validation or export errors.
+    """
+    meta = model_doc.get('meta') or {}
+    meta_tn = meta.get('technical_name')
+    if not isinstance(meta_tn, str) or not meta_tn.strip():
+        raise ApiError('model meta.technical_name is missing')
+    try:
+        parse_technical_name_value(meta_tn, field='meta.technical_name')
+    except ApiError:
+        raise
+    if meta_tn != tn:
+        raise ApiError('model meta.technical_name does not match save name')
+    os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
+    csv_path = model_csv_path(tn)
+    try:
+        with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(MODEL_CSV_COLUMNS)
+            for row in model_doc_to_csv_rows(model_doc):
+                writer.writerow(row)
+        logger.info('Exported model CSV %s', csv_path)
+    except OSError as e:
+        logger.error('save_model CSV write failed: %s', e)
+        raise ApiError(str(e), 500)
+    base_ddls = os.path.join(MODELS_DIR, tn, 'ddls')
+    try:
+        written = ddl_export.write_model_ddls(model_doc, base_ddls)
+    except ddl_export.DdlExportError as e:
+        logger.error('save_model DDL failed: %s', e)
+        raise ApiError(str(e), 400)
+    except OSError as e:
+        logger.error('save_model DDL write failed: %s', e)
+        raise ApiError(str(e), 500)
+    logger.info('Exported model DDL under %s (%d files)', base_ddls, len(written))
+    if png_bytes is not None:
+        out_png = diagram_png_path(tn)
+        try:
+            with open(out_png, 'wb') as f:
+                f.write(png_bytes)
+            logger.info('Saved diagram PNG %s', out_png)
+        except OSError as e:
+            logger.error('save_model diagram PNG write failed: %s', e)
+            raise ApiError(str(e), 500)
+
+
 def path_stem_from_load_json():
     data = request.get_json(silent=True)
     return path_stem_from_envelope(data)
@@ -487,6 +564,7 @@ def api_save_model():
         if supersede_stem == tn:
             supersede_stem = None
     try:
+        png_bytes_optional = optional_decode_request_png_base64(data.get('png_base64'))
         with open('schemas/model.json') as f:
             model_schema = json.load(f)
         with open('schemas/layout.json') as f:
@@ -521,9 +599,13 @@ def api_save_model():
             if os.path.isfile(w_layout) and os.path.normpath(w_layout) != os.path.normpath(dst_w_layout):
                 shutil.move(w_layout, dst_w_layout)
         logger.info('Saved model %s from working copy %s', tn, wstem)
+        write_canonical_model_artifacts(model_doc, tn, png_bytes=png_bytes_optional)
         if supersede_stem:
             _delete_canonical_model_files(supersede_stem)
         return jsonify({'success': True, 'technical_name': tn}), 200
+    except ApiError as e:
+        logger.error('save_model failed: %s', e.message)
+        return jsonify({'success': False, 'error': e.message}), e.status_code
     except jsonschema.ValidationError as e:
         logger.error('save_model validation failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -727,20 +809,7 @@ def api_save_diagram_png():
     if not isinstance(data, dict):
         raise ApiError('expected JSON object')
     tn = parse_technical_name_field(data)
-    raw_b64 = data.get('png_base64')
-    if not isinstance(raw_b64, str) or not raw_b64.strip():
-        raise ApiError('png_base64 is required')
-    s = raw_b64.strip()
-    if s.startswith('data:') and ',' in s:
-        s = s.split(',', 1)[1]
-    try:
-        png_bytes = base64.b64decode(s, validate=True)
-    except binascii.Error:
-        raise ApiError('invalid base64')
-    if len(png_bytes) > MAX_DIAGRAM_PNG_BYTES:
-        raise ApiError('PNG too large')
-    if not png_bytes.startswith(PNG_MAGIC):
-        raise ApiError('not a PNG image')
+    png_bytes = decode_request_png_base64(data.get('png_base64'))
     wstem = working_stem(tn)
     if not os.path.isfile(model_json_path(wstem)) and tn not in list_technical_names():
         raise ApiError('unknown model', 404)
