@@ -974,7 +974,7 @@ function patchRelationshipEdgeData(rel) {
     if (!cy) return;
     const e = cy.getElementById(rel.relationship_id);
     if (e.length === 0) return;
-    e.data('label', rel.cardinality ?? '');
+    e.data('label', '');
     e.data('cardinality', rel.cardinality);
     e.data('parentMandatory', rel.parent_mandatory);
     e.data('childMandatory', rel.child_mandatory);
@@ -1406,12 +1406,70 @@ function formatRecordValueForDetails(value) {
     return { isJson: false, text: String(value) };
 }
 
+/** Diagram-style label: business name, plus technical in parentheses when it differs. */
+function formatBusinessTechnicalRow(obj) {
+    if (!obj) return null;
+    const biz = String(obj.business_name ?? '').trim();
+    const tech = String(obj.technical_name ?? '').trim();
+    if (biz && tech) return biz === tech ? biz : `${biz} (${tech})`;
+    return biz || tech || null;
+}
+
 const RELATIONSHIP_EDITABLE_KEYS = new Set([
     'child_cardinality',
     'child_mandatory',
     'parent_cardinality',
     'parent_mandatory',
 ]);
+
+/** Non-editable relationship fields shown as grey static rows (same pattern as entity technical_name / model created). */
+const RELATIONSHIP_READONLY_KEYS_ORDER = [
+    'relationship_id',
+    'relationship_name',
+    'parent_entity_id',
+    'parent_attribute_id',
+    'child_entity_id',
+    'child_attribute_id',
+];
+
+const RELATIONSHIP_DETAIL_KNOWN_KEYS = new Set([
+    ...RELATIONSHIP_READONLY_KEYS_ORDER,
+    ...RELATIONSHIP_EDITABLE_KEYS,
+    'cardinality',
+]);
+
+/** Readonly relationship row: resolved names for entity/attribute id keys; hover title holds the stored id. */
+function relationshipReadonlyDisplay(rel, key) {
+    const raw = rel[key];
+    if (raw === undefined || raw === null) {
+        return { text: '', title: undefined };
+    }
+    const idText = formatRecordValueForDetails(raw).text;
+    switch (key) {
+        case 'parent_entity_id': {
+            const ent = findEntityById(raw);
+            const name = formatBusinessTechnicalRow(ent);
+            return { text: name ?? idText, title: name ? idText : undefined };
+        }
+        case 'child_entity_id': {
+            const ent = findEntityById(raw);
+            const name = formatBusinessTechnicalRow(ent);
+            return { text: name ?? idText, title: name ? idText : undefined };
+        }
+        case 'parent_attribute_id': {
+            const attr = findAttributeById(raw);
+            const name = formatBusinessTechnicalRow(attr);
+            return { text: name ?? idText, title: name ? idText : undefined };
+        }
+        case 'child_attribute_id': {
+            const attr = findAttributeById(raw);
+            const name = formatBusinessTechnicalRow(attr);
+            return { text: name ?? idText, title: name ? idText : undefined };
+        }
+        default:
+            return { text: idText, title: undefined };
+    }
+}
 
 /** Sets rel.cardinality to 1:1 / 1:M / M:1 / M:M from parent_cardinality and child_cardinality (One|Many). */
 function deriveRelationshipCardinality(rel) {
@@ -1436,6 +1494,23 @@ function renderRelationshipDetails(rel) {
     if (!shell) return;
     diagramRemovalSelection = { kind: 'relationship', id: rel.relationship_id };
     const { root, form } = shell;
+
+    const prevCardinality = rel.cardinality;
+    const prevName = rel.relationship_name ?? '';
+    syncRelationshipName(rel);
+    if (prevCardinality !== rel.cardinality || prevName !== (rel.relationship_name ?? '')) {
+        patchRelationshipEdgeData(rel);
+        schedulePersistWorkingModel();
+    }
+
+    for (const key of RELATIONSHIP_READONLY_KEYS_ORDER) {
+        const { text, title } = relationshipReadonlyDisplay(rel, key);
+        appendDetailsReadonlyField(form, key, text, title);
+    }
+
+    const cardinalityValueEl = document.createElement('div');
+    cardinalityValueEl.className = 'details-field-control details-static';
+    cardinalityValueEl.textContent = rel.cardinality;
 
     function addBoolField(labelText, checked, onChange) {
         const cb = document.createElement('input');
@@ -1463,17 +1538,6 @@ function renderRelationshipDetails(rel) {
         appendDetailsFormField(form, labelText, sel);
     }
 
-    const prevCardinality = rel.cardinality;
-    const prevName = rel.relationship_name ?? '';
-    syncRelationshipName(rel);
-    if (prevCardinality !== rel.cardinality || prevName !== (rel.relationship_name ?? '')) {
-        patchRelationshipEdgeData(rel);
-        schedulePersistWorkingModel();
-    }
-    const cardinalityValueEl = document.createElement('div');
-    cardinalityValueEl.className = 'details-field-control details-static';
-    cardinalityValueEl.textContent = rel.cardinality;
-
     addSideCardinalitySelect('parent_cardinality', rel.parent_cardinality, (v) => {
         rel.parent_cardinality = v;
     });
@@ -1497,35 +1561,29 @@ function renderRelationshipDetails(rel) {
         rel.parent_mandatory = v;
     });
 
-    root.appendChild(form);
-
     const otherKeys = Object.keys(rel)
         .sort()
-        .filter((k) => !RELATIONSHIP_EDITABLE_KEYS.has(k) && k !== 'cardinality');
+        .filter((k) => !RELATIONSHIP_DETAIL_KNOWN_KEYS.has(k));
     if (otherKeys.length > 0) {
         const sub = document.createElement('h4');
         sub.className = 'details-subheading';
         sub.textContent = 'Other properties';
-        root.appendChild(sub);
-        const dl = document.createElement('dl');
-        dl.className = 'details-props';
+        form.appendChild(sub);
         for (const key of otherKeys) {
-            const dt = document.createElement('dt');
-            dt.textContent = key;
-            const dd = document.createElement('dd');
             const fmt = formatRecordValueForDetails(rel[key]);
             if (fmt.isJson) {
-                const pre = document.createElement('pre');
-                pre.textContent = fmt.text;
-                dd.appendChild(pre);
+                const ta = document.createElement('textarea');
+                ta.readOnly = true;
+                ta.rows = Math.min(14, fmt.text.split('\n').length + 1);
+                ta.value = fmt.text;
+                appendDetailsFormField(form, key, ta);
             } else {
-                dd.textContent = fmt.text;
+                appendDetailsReadonlyField(form, key, fmt.text);
             }
-            dl.appendChild(dt);
-            dl.appendChild(dd);
         }
-        root.appendChild(dl);
     }
+
+    root.appendChild(form);
     syncRemoveSelectedButtonState();
 }
 
@@ -1590,10 +1648,11 @@ function formatMetaIsoDate(isoDate) {
     return String(isoDate).replace('T', ' ').replace(/\.\d+/, '').replace('Z', ' UTC');
 }
 
-function appendDetailsReadonlyField(form, labelText, textContent) {
+function appendDetailsReadonlyField(form, labelText, textContent, title) {
     const el = document.createElement('div');
     el.className = 'details-static';
     el.textContent = textContent ?? '';
+    if (title) el.title = title;
     appendDetailsFormField(form, labelText, el);
 }
 
@@ -1794,7 +1853,7 @@ function modelToNodesEdges() {
                     id: rel.relationship_id,
                     source: rel.parent_attribute_id,
                     target: rel.child_attribute_id,
-                    label: rel.cardinality,
+                    label: '',
                     sourceEntity: rel.parent_entity_id,
                     targetEntity: rel.child_entity_id,
                     type: 'relationship',
@@ -2191,7 +2250,7 @@ const cyStyle = [
         selector: 'edge[type = "relationship"]',
         style: {
             'width': 2,
-            'label': 'data(label)',
+            'label': '',
             'curve-style': 'taxi',
             'taxi-direction': 'horizontal',
             'taxi-turn': 50,
