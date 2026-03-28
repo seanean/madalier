@@ -304,6 +304,8 @@ let metadataNameInputEl = null;
 let lastValidModelMetaName = '';
 /** Set when the user taps an entity (or its header) on the diagram; cleared on background tap. */
 let selectedEntityId = null;
+/** Diagram element whose details are shown; drives Remove selected (entity / attribute / relationship id). */
+let diagramRemovalSelection = null;
 
 /** Captured before `cy.destroy()` so pan/zoom can be restored after rebuild; cleared when loading another model. */
 let preservedCyViewport = null;
@@ -738,8 +740,10 @@ async function loadWorkingCopyAndRender(technicalName) {
     console.log('Nodes created:', nodes.length);
     console.log('Edges created:', edges.length);
     selectedEntityId = null;
+    diagramRemovalSelection = null;
     syncAddAttributeButtonState();
     syncAddRelationshipButtonState();
+    syncRemoveSelectedButtonState();
     preservedCyViewport = null;
     fitCyViewportAfterNextRender = false;
     if (cy) {
@@ -856,6 +860,73 @@ function countModelAttributes() {
 function syncAddRelationshipButtonState() {
     const btn = document.getElementById('add-relationship-btn');
     if (btn) btn.disabled = !canonicalTechnicalName || countModelAttributes() < 2;
+}
+
+function syncRemoveSelectedButtonState() {
+    const btn = document.getElementById('remove-selected-btn');
+    if (btn) btn.disabled = !canonicalTechnicalName || !diagramRemovalSelection;
+}
+
+/** Remove the diagram element indicated by `diagramRemovalSelection` from `model`, persist working copy, and refresh. */
+function removeDiagramSelection() {
+    if (!canonicalTechnicalName || !diagramRemovalSelection) {
+        alert('Nothing selected to remove.');
+        return;
+    }
+    const sel = diagramRemovalSelection;
+    const rels = model.relationships || [];
+
+    if (sel.kind === 'entity') {
+        const ent = findEntityById(sel.id);
+        if (!ent) {
+            alert('Element no longer in model.');
+            diagramRemovalSelection = null;
+            syncRemoveSelectedButtonState();
+            return;
+        }
+        const attrIds = new Set((ent.attributes || []).map((a) => a.attribute_id));
+        model.entities = (model.entities || []).filter((e) => e.entity_id !== sel.id);
+        delete positions[sel.id];
+        model.relationships = rels.filter(
+            (r) =>
+                r.parent_entity_id !== sel.id &&
+                r.child_entity_id !== sel.id &&
+                !attrIds.has(r.parent_attribute_id) &&
+                !attrIds.has(r.child_attribute_id),
+        );
+        if (selectedEntityId === sel.id) selectedEntityId = null;
+    } else if (sel.kind === 'attribute') {
+        const ent = findEntityContainingAttribute(sel.id);
+        if (!ent) {
+            alert('Element no longer in model.');
+            diagramRemovalSelection = null;
+            syncRemoveSelectedButtonState();
+            return;
+        }
+        ent.attributes = (ent.attributes || []).filter((a) => a.attribute_id !== sel.id);
+        model.relationships = rels.filter(
+            (r) => r.parent_attribute_id !== sel.id && r.child_attribute_id !== sel.id,
+        );
+    } else {
+        const exists = rels.some((r) => r.relationship_id === sel.id);
+        if (!exists) {
+            alert('Element no longer in model.');
+            diagramRemovalSelection = null;
+            syncRemoveSelectedButtonState();
+            return;
+        }
+        model.relationships = rels.filter((r) => r.relationship_id !== sel.id);
+    }
+
+    diagramRemovalSelection = null;
+    modelToNodesEdges();
+    renderCy();
+    clearDetailsPane();
+    schedulePersistWorkingModel();
+    saveLayout();
+    syncAddAttributeButtonState();
+    syncAddRelationshipButtonState();
+    syncRemoveSelectedButtonState();
 }
 
 /** True when every entity in `model` has `{ x, y }` in `positions` (used to place nodes without dagre). */
@@ -1063,6 +1134,7 @@ function fillDetailsEnumSelect(select, allowedValues, currentValue) {
 function renderEntityDetails(ent) {
     const shell = beginDetailsPane('Entity');
     if (!shell) return;
+    diagramRemovalSelection = { kind: 'entity', id: ent.entity_id };
     const { root, form } = shell;
 
     const inpBusiness = document.createElement('input');
@@ -1105,6 +1177,7 @@ function renderEntityDetails(ent) {
     appendDetailsFormField(form, 'entity_type', selType);
 
     root.appendChild(form);
+    syncRemoveSelectedButtonState();
 }
 
 function parseOptionalIntField(attr, key, raw) {
@@ -1161,6 +1234,7 @@ function renderAttributeDetails(attr) {
 
     const shell = beginDetailsPane('Attribute');
     if (!shell) return;
+    diagramRemovalSelection = { kind: 'attribute', id: attr.attribute_id };
     const { root, form } = shell;
 
     const entForAttr = findEntityContainingAttribute(attr.attribute_id);
@@ -1315,6 +1389,7 @@ function renderAttributeDetails(attr) {
     form.appendChild(orderWrap);
 
     root.appendChild(form);
+    syncRemoveSelectedButtonState();
 }
 
 function formatRecordValueForDetails(value) {
@@ -1359,6 +1434,7 @@ function syncRelationshipName(rel) {
 function renderRelationshipDetails(rel) {
     const shell = beginDetailsPane('Relationship');
     if (!shell) return;
+    diagramRemovalSelection = { kind: 'relationship', id: rel.relationship_id };
     const { root, form } = shell;
 
     function addBoolField(labelText, checked, onChange) {
@@ -1450,6 +1526,7 @@ function renderRelationshipDetails(rel) {
         }
         root.appendChild(dl);
     }
+    syncRemoveSelectedButtonState();
 }
 
 function ensureModelMeta() {
@@ -1615,6 +1692,7 @@ function renderModelMetadataDetails() {
 }
 
 function renderDetailsError(message) {
+    diagramRemovalSelection = null;
     const root = document.getElementById('details-content');
     if (!root) return;
     root.replaceChildren();
@@ -1622,10 +1700,12 @@ function renderDetailsError(message) {
     p.className = 'details-error';
     p.textContent = message;
     root.appendChild(p);
+    syncRemoveSelectedButtonState();
 }
 
 function clearDetailsPane() {
     detailsPersistErrorText = null;
+    diagramRemovalSelection = null;
     clearTimeout(persistModelTimer);
     persistModelTimer = null;
     clearTimeout(metaRenameTimer);
@@ -1639,9 +1719,11 @@ function clearDetailsPane() {
         p.textContent = 'Open or create a model to view metadata and diagram elements.';
         root.appendChild(p);
         refreshDiagramMetaStrip();
+        syncRemoveSelectedButtonState();
         return;
     }
     renderModelMetadataDetails();
+    syncRemoveSelectedButtonState();
 }
 
 function modelToNodesEdges() {
@@ -2636,7 +2718,9 @@ document.getElementById('export-diagram-btn')?.addEventListener('click', () => v
 
 initAddAttributeDataTypeSelect();
 syncAddRelationshipButtonState();
+syncRemoveSelectedButtonState();
 wireAddRelationshipDialogControls();
+document.getElementById('remove-selected-btn')?.addEventListener('click', () => removeDiagramSelection());
 document.getElementById('add-entity-btn')?.addEventListener('click', () => openAddEntityDialog());
 document.getElementById('add-attribute-btn')?.addEventListener('click', () => openAddAttributeDialog());
 document.getElementById('add-relationship-btn')?.addEventListener('click', () => openAddRelationshipDialog());
