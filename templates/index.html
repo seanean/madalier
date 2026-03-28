@@ -326,7 +326,8 @@
         }
 
         .new-model-dialog input,
-        .new-model-dialog textarea {
+        .new-model-dialog textarea,
+        .new-model-dialog select {
             width: 100%;
             box-sizing: border-box;
             font: inherit;
@@ -339,6 +340,11 @@
         .new-model-dialog textarea {
             min-height: 3.5rem;
             resize: vertical;
+        }
+
+        .new-model-dialog input[readonly] {
+            background: #f0f0f0;
+            color: #333;
         }
 
         .new-model-dialog .field-hint {
@@ -366,8 +372,8 @@
         <button type="button" id="new-model-btn">New model</button>
         <button type="button" id="open-model-btn">Open model</button>
         <button type="button" id="save-model-btn">Save model</button>
-        <button type="button">Add entity</button>
-        <button type="button">Add attribute</button>
+        <button type="button" id="add-entity-btn">Add entity</button>
+        <button type="button" id="add-attribute-btn" disabled>Add attribute</button>
         <button type="button">Add relationship</button>
         <button type="button">Remove selected</button>
         <button type="button">Export diagram</button>
@@ -425,6 +431,49 @@
             <footer>
                 <button type="button" id="new-model-cancel">Cancel</button>
                 <button type="submit" id="new-model-submit">Create</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <dialog id="add-entity-dialog" class="new-model-dialog" aria-labelledby="add-entity-dialog-title">
+        <header id="add-entity-dialog-title">Add entity</header>
+        <form class="dialog-body" id="add-entity-form">
+            <label for="add-entity-business-name">Business name</label>
+            <input type="text" id="add-entity-business-name" name="business_name" required autocomplete="off"
+                maxlength="500">
+            <label for="add-entity-technical-name">Technical name (derived)</label>
+            <input type="text" id="add-entity-technical-name" readonly autocomplete="off" maxlength="200"
+                aria-readonly="true">
+            <label for="add-entity-type">Entity type</label>
+            <select id="add-entity-type" name="entity_type" required>
+                <option value="table">table</option>
+                <option value="view">view</option>
+            </select>
+            <label for="add-entity-definition">Definition</label>
+            <textarea id="add-entity-definition" name="definition" required maxlength="4000"></textarea>
+            <footer>
+                <button type="button" id="add-entity-cancel">Cancel</button>
+                <button type="submit" id="add-entity-submit">Add</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <dialog id="add-attribute-dialog" class="new-model-dialog" aria-labelledby="add-attribute-dialog-title">
+        <header id="add-attribute-dialog-title">Add attribute</header>
+        <form class="dialog-body" id="add-attribute-form">
+            <label for="add-attribute-business-name">Business name</label>
+            <input type="text" id="add-attribute-business-name" name="business_name" required autocomplete="off"
+                maxlength="500">
+            <label for="add-attribute-technical-name">Technical name (derived)</label>
+            <input type="text" id="add-attribute-technical-name" readonly autocomplete="off" maxlength="200"
+                aria-readonly="true">
+            <label for="add-attribute-data-type">Data type</label>
+            <select id="add-attribute-data-type" name="data_type" required></select>
+            <label for="add-attribute-definition">Definition</label>
+            <textarea id="add-attribute-definition" name="definition" required maxlength="4000"></textarea>
+            <footer>
+                <button type="button" id="add-attribute-cancel">Cancel</button>
+                <button type="submit" id="add-attribute-submit">Add</button>
             </footer>
         </form>
     </dialog>

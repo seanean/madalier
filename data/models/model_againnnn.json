@@ -1,0 +1,135 @@
+{
+    "entities": [
+        {
+            "attributes": [
+                {
+                    "attribute_id": "a1000000-0000-4000-8000-000000000001",
+                    "attribute_order": 1,
+                    "business_name": "Column One",
+                    "data_type": "STRING",
+                    "definition": "sample string",
+                    "key_type": null,
+                    "source_mapping": "something.there",
+                    "technical_name": "col_one"
+                },
+                {
+                    "attribute_id": "a2000000-0000-4000-8000-000000000002",
+                    "attribute_order": 2,
+                    "business_name": "Column Two",
+                    "data_type": "DECIMAL",
+                    "definition": "sample string",
+                    "key_type": null,
+                    "precision": 20,
+                    "scale": 11,
+                    "source_mapping": "something.here",
+                    "technical_name": "col_two"
+                }
+            ],
+            "business_name": "Entity Name",
+            "definition": "entity name definition",
+            "entity_id": "e1000000-0000-4000-8000-000000000001",
+            "entity_type": "table",
+            "technical_name": "entity_nm"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "a3000000-0000-4000-8000-000000000003",
+                    "attribute_order": 1,
+                    "business_name": "Column One",
+                    "data_type": "BIGINT",
+                    "definition": "sample string",
+                    "key_type": null,
+                    "source_mapping": "something.there",
+                    "technical_name": "col_one"
+                },
+                {
+                    "attribute_id": "a4000000-0000-4000-8000-000000000004",
+                    "attribute_order": 2,
+                    "business_name": "Column X",
+                    "data_type": "DECIMAL",
+                    "definition": "sample string",
+                    "key_type": null,
+                    "precision": 1,
+                    "scale": 1,
+                    "source_mapping": "something.here",
+                    "technical_name": "col_x"
+                }
+            ],
+            "business_name": "Entity Name 23",
+            "definition": "entity name definition",
+            "entity_id": "e2000000-0000-4000-8000-000000000002",
+            "entity_type": "table",
+            "technical_name": "entity_nm_2"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "9d9bda3b-201b-4bce-9d69-40452d0ae872",
+                    "attribute_order": 1,
+                    "business_name": "bghjbn",
+                    "data_type": "STRING",
+                    "definition": "bhjn",
+                    "key_type": null,
+                    "technical_name": "bghjbn"
+                }
+            ],
+            "business_name": "nnjn mm",
+            "definition": "hunjkm",
+            "entity_id": "3e102edd-5a58-4a71-9db3-1a13ee6261a2",
+            "entity_type": "table",
+            "technical_name": "nnjn_mm"
+        },
+        {
+            "entity_id": "8ca55e7d-c0f1-4ef1-8239-c15fd7e8c69e",
+            "business_name": "jnhkm",
+            "technical_name": "jnhkm",
+            "entity_type": "table",
+            "definition": "hbjnk",
+            "attributes": [
+                {
+                    "attribute_id": "732fc2e3-f1fc-41e4-9a4e-28c21a0cb3eb",
+                    "business_name": "hnjkm",
+                    "technical_name": "hnjkm",
+                    "data_type": "STRING",
+                    "definition": "bhjnkm",
+                    "attribute_order": 1,
+                    "key_type": null
+                },
+                {
+                    "attribute_id": "30b0ad85-6693-432b-aef5-136a9496ae08",
+                    "business_name": "nbbbbbbbb",
+                    "technical_name": "nbbbbbbbb",
+                    "data_type": "STRING",
+                    "definition": "nnnnnnnnnnn",
+                    "attribute_order": 2,
+                    "key_type": null
+                }
+            ]
+        }
+    ],
+    "meta": {
+        "created": "2026-03-26T20:49:25.004Z",
+        "created_by": "John Doe",
+        "description": "sample string",
+        "modified": "2026-03-28T06:59:31.596230Z",
+        "name": "MODEL AGAINNNN",
+        "technical_name": "model_againnnn",
+        "version": "1.0.0"
+    },
+    "relationships": [
+        {
+            "cardinality": "1:1",
+            "child_attribute_id": "a3000000-0000-4000-8000-000000000003",
+            "child_cardinality": "One",
+            "child_entity_id": "e2000000-0000-4000-8000-000000000002",
+            "child_mandatory": true,
+            "parent_attribute_id": "a1000000-0000-4000-8000-000000000001",
+            "parent_cardinality": "One",
+            "parent_entity_id": "e1000000-0000-4000-8000-000000000001",
+            "parent_mandatory": true,
+            "relationship_id": "f1000000-0000-4000-8000-000000000001",
+            "relationship_name": "entity_nm_1.col_one 1:1 entity_nm_2.col_one"
+        }
+    ]
+}

@@ -40,6 +40,260 @@ let metadataTechnicalInputEl = null;
 let metadataNameInputEl = null;
 /** Last non-empty trimmed model name; used to revert illegal clears. */
 let lastValidModelMetaName = '';
+/** Set when the user taps an entity (or its header) on the diagram; cleared on background tap. */
+let selectedEntityId = null;
+
+/** Captured before `cy.destroy()` so pan/zoom can be restored after rebuild; cleared when loading another model. */
+let preservedCyViewport = null;
+
+/** When true, next `renderCy()` skips preserving pan/zoom and fits all elements (e.g. after adding an entity). */
+let fitCyViewportAfterNextRender = false;
+
+/** Loaded from GET /api/naming_config; matches [schemas/naming.json](schemas/naming.json). */
+let namingConfig = null;
+
+/** Matches schemas/naming.json naming_convention.enum */
+const NAMING_CONVENTIONS = [
+    'lower_snake_case',
+    'UPPER_SNAKE_CASE',
+    'Proper_Snake_Case',
+    'lower-kebab-case',
+    'UPPER-KEBAB-CASE',
+    'Proper-Kebab-Case',
+    'camelCase',
+    'PascalCase',
+];
+
+function defaultNamingConfig() {
+    return { naming_convention: 'lower_snake_case', word_mappings: [] };
+}
+
+async function loadNamingConfig() {
+    try {
+        const res = await fetch('/api/naming_config');
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        if (!data || typeof data !== 'object') {
+            namingConfig = defaultNamingConfig();
+            return;
+        }
+        namingConfig = data;
+        if (!Array.isArray(namingConfig.word_mappings)) namingConfig.word_mappings = [];
+    } catch (e) {
+        console.error(e);
+        namingConfig = defaultNamingConfig();
+    }
+}
+
+function getSortedWordMappings() {
+    const cfg = namingConfig || defaultNamingConfig();
+    const list = Array.isArray(cfg.word_mappings) ? cfg.word_mappings : [];
+    return [...list]
+        .filter((m) => m && typeof m.business_name === 'string' && m.business_name.trim())
+        .sort((a, b) => b.business_name.trim().length - a.business_name.trim().length);
+}
+
+/** Letters/digits from a single unknown word → lowercase slug. */
+function slugifyBusinessWord(word) {
+    let s = String(word ?? '').trim();
+    try {
+        s = s.normalize('NFKD').replace(/\p{M}+/gu, '');
+    } catch {
+        /* ignore if unsupported */
+    }
+    s = s.replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+    return s || 'x';
+}
+
+function phraseMatchLen(remaining, phraseLower) {
+    const pl = phraseLower;
+    if (!pl.length) return 0;
+    const r = remaining;
+    if (r.length < pl.length) return 0;
+    const rl = r.slice(0, pl.length).toLowerCase();
+    if (rl !== pl) return 0;
+    if (r.length === pl.length) return pl.length;
+    const next = r[pl.length];
+    if (next === ' ' || next === '\t' || next === '\n') return pl.length;
+    return 0;
+}
+
+function segmentsFromBusinessName(businessName) {
+    const mappings = getSortedWordMappings();
+    let s = String(businessName ?? '')
+        .trim()
+        .replace(/\s+/g, ' ');
+    if (!s) return [];
+    const segments = [];
+    while (s.length) {
+        s = s.replace(/^\s+/, '');
+        if (!s.length) break;
+        let matched = false;
+        for (const m of mappings) {
+            const key = m.business_name.trim();
+            if (!key) continue;
+            const len = phraseMatchLen(s, key.toLowerCase());
+            if (len > 0) {
+                const abbr = String(m.technical_abbreviation ?? '').trim();
+                segments.push(abbr || slugifyBusinessWord(key));
+                s = s.slice(len);
+                matched = true;
+                break;
+            }
+        }
+        if (matched) continue;
+        const sp = s.indexOf(' ');
+        const word = sp === -1 ? s : s.slice(0, sp);
+        s = sp === -1 ? '' : s.slice(sp + 1);
+        const wordTrim = word.trim();
+        if (!wordTrim) continue;
+        let mappedAbbr = null;
+        for (const m of mappings) {
+            if (m.business_name.trim().toLowerCase() === wordTrim.toLowerCase()) {
+                mappedAbbr = String(m.technical_abbreviation ?? '').trim();
+                break;
+            }
+        }
+        segments.push(mappedAbbr || slugifyBusinessWord(wordTrim));
+    }
+    return segments;
+}
+
+function flattenSegmentWords(segments) {
+    const words = [];
+    for (const seg of segments) {
+        String(seg)
+            .split(/_+/)
+            .filter(Boolean)
+            .forEach((w) => words.push(w));
+    }
+    return words;
+}
+
+function capitalizeWordProper(p) {
+    if (!p) return '';
+    return p[0].toUpperCase() + p.slice(1).toLowerCase();
+}
+
+function applyNamingConvention(segments, convention) {
+    const words = flattenSegmentWords(segments);
+    if (words.length === 0) return '';
+    switch (convention) {
+        case 'lower_snake_case':
+            return words.map((w) => w.toLowerCase()).join('_');
+        case 'UPPER_SNAKE_CASE':
+            return words.map((w) => w.toUpperCase()).join('_');
+        case 'Proper_Snake_Case':
+            return words.map((w) => capitalizeWordProper(w)).join('_');
+        case 'lower-kebab-case':
+            return words.map((w) => w.toLowerCase()).join('-');
+        case 'UPPER-KEBAB-CASE':
+            return words.map((w) => w.toUpperCase()).join('-');
+        case 'Proper-Kebab-Case':
+            return words.map((w) => capitalizeWordProper(w)).join('-');
+        case 'camelCase': {
+            const lower = words.map((w) => w.toLowerCase());
+            let out = lower[0];
+            for (let i = 1; i < lower.length; i++) {
+                const p = lower[i];
+                out += p ? p[0].toUpperCase() + p.slice(1) : '';
+            }
+            return out;
+        }
+        case 'PascalCase': {
+            let out = '';
+            for (const w of words) {
+                const p = w.toLowerCase();
+                out += p ? p[0].toUpperCase() + p.slice(1) : '';
+            }
+            return out;
+        }
+        default:
+            return words.map((w) => w.toLowerCase()).join('_');
+    }
+}
+
+function deriveTechnicalNameFromBusiness(businessName) {
+    const cfg = namingConfig || defaultNamingConfig();
+    const conv = NAMING_CONVENTIONS.includes(cfg.naming_convention)
+        ? cfg.naming_convention
+        : 'lower_snake_case';
+    const raw = String(businessName ?? '').trim();
+    if (!raw) return 'unnamed';
+    const segments = segmentsFromBusinessName(raw);
+    if (segments.length === 0) return 'unnamed';
+    let result = applyNamingConvention(segments, conv);
+    if (!result || !/[\p{L}\p{N}]/u.test(result)) result = 'unnamed';
+    if (!isValidEntityAttributeTechnicalName(result)) {
+        result = `x_${result}`;
+    }
+    if (!isValidEntityAttributeTechnicalName(result)) result = 'unnamed';
+    return result;
+}
+
+/** Identifier for entity/attribute technical_name (Unicode letter/digit start; then word chars, underscore, hyphen). */
+function isValidEntityAttributeTechnicalName(name) {
+    if (typeof name !== 'string' || !name.trim()) return false;
+    if (name.length > 500) return false;
+    return /^[\p{L}\p{N}][\p{L}\p{N}_-]*$/u.test(name);
+}
+
+function ensureUniqueEntityTechnicalName(base, excludeEntityId) {
+    const entities = model.entities || [];
+    const taken = new Set(
+        entities.filter((e) => e.entity_id !== excludeEntityId).map((e) => e.technical_name),
+    );
+    const b = base || 'unnamed';
+    if (!taken.has(b)) return b;
+    for (let n = 2; n < 10000; n++) {
+        const c = `${b}_${n}`;
+        if (!taken.has(c)) return c;
+    }
+    return `${b}_${Date.now()}`;
+}
+
+function ensureUniqueAttributeTechnicalName(base, excludeAttributeId, entity) {
+    const attrs = entity?.attributes || [];
+    const taken = new Set(
+        attrs.filter((a) => a.attribute_id !== excludeAttributeId).map((a) => a.technical_name),
+    );
+    const b = base || 'unnamed';
+    if (!taken.has(b)) return b;
+    for (let n = 2; n < 10000; n++) {
+        const c = `${b}_${n}`;
+        if (!taken.has(c)) return c;
+    }
+    return `${b}_${Date.now()}`;
+}
+
+function derivedEntityTechnicalNameForBusiness(businessName, excludeEntityId) {
+    const base = deriveTechnicalNameFromBusiness(businessName);
+    return ensureUniqueEntityTechnicalName(base, excludeEntityId);
+}
+
+function derivedAttributeTechnicalNameForBusiness(businessName, entity, excludeAttributeId) {
+    const base = deriveTechnicalNameFromBusiness(businessName);
+    return ensureUniqueAttributeTechnicalName(base, excludeAttributeId, entity);
+}
+
+function syncAddEntityTechnicalPreview() {
+    const biz = document.getElementById('add-entity-business-name')?.value ?? '';
+    const techEl = document.getElementById('add-entity-technical-name');
+    if (!techEl) return;
+    techEl.value = derivedEntityTechnicalNameForBusiness(biz.trim(), undefined);
+}
+
+function syncAddAttributeTechnicalPreview() {
+    const biz = document.getElementById('add-attribute-business-name')?.value ?? '';
+    const techEl = document.getElementById('add-attribute-technical-name');
+    if (!techEl) return;
+    const ent = findEntityById(selectedEntityId);
+    if (!ent) {
+        techEl.value = '';
+        return;
+    }
+    techEl.value = derivedAttributeTechnicalNameForBusiness(biz.trim(), ent, undefined);
+}
 
 /** Letters, numbers, spaces, and underscores only (Unicode letters and numbers). */
 function sanitizeMetaModelName(raw) {
@@ -218,6 +472,14 @@ async function loadWorkingCopyAndRender(technicalName) {
     modelToNodesEdges();
     console.log('Nodes created:', nodes.length);
     console.log('Edges created:', edges.length);
+    selectedEntityId = null;
+    syncAddAttributeButtonState();
+    preservedCyViewport = null;
+    fitCyViewportAfterNextRender = false;
+    if (cy) {
+        cy.destroy();
+        cy = undefined;
+    }
     renderCy();
     clearDetailsPane();
 }
@@ -311,6 +573,52 @@ function findRelationshipById(id) {
     return rels.find((r) => r.relationship_id === id) ?? null;
 }
 
+function syncAddAttributeButtonState() {
+    const btn = document.getElementById('add-attribute-btn');
+    if (btn) btn.disabled = !selectedEntityId || !canonicalTechnicalName;
+}
+
+/** True when every entity in `model` has `{ x, y }` in `positions` (used to place nodes without dagre). */
+function entitiesAllHaveStoredPositions() {
+    const entities = model.entities || [];
+    if (entities.length === 0) return false;
+    return entities.every((e) => {
+        const p = positions[e.entity_id];
+        return p && Number.isFinite(p.x) && Number.isFinite(p.y);
+    });
+}
+
+/**
+ * Position for a new entity: to the left of the current left-most entity, or (0,0) if none.
+ * Call before mutating `model.entities` so `cy` still reflects the prior set.
+ */
+function computePositionForNewEntity() {
+    const existing = model.entities || [];
+    if (existing.length === 0 || !cy || typeof cy.nodes !== 'function') {
+        return { x: 0, y: 0 };
+    }
+    const entNodes = cy.nodes('[type = "entity"]');
+    if (entNodes.length === 0) {
+        return { x: 0, y: 0 };
+    }
+    let minX1 = Infinity;
+    let leftNode = null;
+    entNodes.forEach((ent) => {
+        const bb = ent.boundingbox({ includeLabels: true });
+        if (bb.x1 < minX1) {
+            minX1 = bb.x1;
+            leftNode = ent;
+        }
+    });
+    if (!leftNode) return { x: 0, y: 0 };
+    const bb = leftNode.boundingbox({ includeLabels: true });
+    const gap = 120;
+    const newW = Math.max(CARD_WIDTH * 1.5, bb.w);
+    const newX = bb.x1 - gap - newW / 2;
+    const newY = leftNode.position('y');
+    return { x: newX, y: newY };
+}
+
 function patchRelationshipEdgeData(rel) {
     if (!cy) return;
     const e = cy.getElementById(rel.relationship_id);
@@ -345,6 +653,21 @@ function patchAttributeLabelInCy(attributeId, businessName) {
         n.data('label', businessName ?? '');
         n.data('businessName', businessName ?? '');
     }
+}
+
+function patchEntityTechnicalNameInCy(entityId, technicalName) {
+    if (!cy) return;
+    const t = technicalName ?? '';
+    const ent = cy.getElementById(entityId);
+    if (ent.nonempty()) ent.data('technicalName', t);
+    const hdr = cy.getElementById(`${entityId}_hdr`);
+    if (hdr.nonempty()) hdr.data('technicalName', t);
+}
+
+function patchAttributeTechnicalNameInCy(attributeId, technicalName) {
+    if (!cy) return;
+    const n = cy.getElementById(attributeId);
+    if (n.nonempty()) n.data('technicalName', technicalName ?? '');
 }
 
 function syncDetailsPersistBanner() {
@@ -460,12 +783,24 @@ function renderEntityDetails(ent) {
     const inpBusiness = document.createElement('input');
     inpBusiness.type = 'text';
     inpBusiness.value = ent.business_name ?? '';
+
+    const inpTechnical = document.createElement('input');
+    inpTechnical.type = 'text';
+    inpTechnical.readOnly = true;
+    inpTechnical.value = ent.technical_name ?? '';
+    inpTechnical.title = 'Derived from business name and naming config';
+
     inpBusiness.addEventListener('input', () => {
         ent.business_name = inpBusiness.value;
         patchEntityLabelInCy(ent.entity_id, ent.business_name);
+        const next = derivedEntityTechnicalNameForBusiness(ent.business_name, ent.entity_id);
+        ent.technical_name = next;
+        inpTechnical.value = next;
+        patchEntityTechnicalNameInCy(ent.entity_id, next);
         schedulePersistWorkingModel();
     });
     appendDetailsFormField(form, 'business_name', inpBusiness);
+    appendDetailsFormField(form, 'technical_name', inpTechnical);
 
     const taDef = document.createElement('textarea');
     taDef.rows = 4;
@@ -543,15 +878,35 @@ function renderAttributeDetails(attr) {
     if (!shell) return;
     const { root, form } = shell;
 
+    const entForAttr = findEntityContainingAttribute(attr.attribute_id);
+
     const inpBusiness = document.createElement('input');
     inpBusiness.type = 'text';
     inpBusiness.value = attr.business_name ?? '';
+
+    const inpTechnical = document.createElement('input');
+    inpTechnical.type = 'text';
+    inpTechnical.readOnly = true;
+    inpTechnical.value = attr.technical_name ?? '';
+    inpTechnical.title = 'Derived from business name and naming config';
+
     inpBusiness.addEventListener('input', () => {
         attr.business_name = inpBusiness.value;
         patchAttributeLabelInCy(attr.attribute_id, attr.business_name);
+        if (entForAttr) {
+            const next = derivedAttributeTechnicalNameForBusiness(
+                attr.business_name,
+                entForAttr,
+                attr.attribute_id,
+            );
+            attr.technical_name = next;
+            inpTechnical.value = next;
+            patchAttributeTechnicalNameInCy(attr.attribute_id, next);
+        }
         schedulePersistWorkingModel();
     });
     appendDetailsFormField(form, 'business_name', inpBusiness);
+    appendDetailsFormField(form, 'technical_name', inpTechnical);
 
     const taDef = document.createElement('textarea');
     taDef.rows = 4;
@@ -625,8 +980,7 @@ function renderAttributeDetails(attr) {
     });
     appendDetailsFormField(form, 'key_type', selKey);
 
-    const entForOrder = findEntityContainingAttribute(attr.attribute_id);
-    const attrsSorted = entForOrder ? sortedEntityAttributes(entForOrder) : [];
+    const attrsSorted = entForAttr ? sortedEntityAttributes(entForAttr) : [];
     const orderIdx = attrsSorted.findIndex((a) => a.attribute_id === attr.attribute_id);
 
     const orderWrap = document.createElement('div');
@@ -1011,7 +1365,19 @@ function modelToNodesEdges() {
 }
 
 function renderCy() {
+    syncEntityPositionsMapFromCy();
+    const forceFitViewport = fitCyViewportAfterNextRender;
+    fitCyViewportAfterNextRender = false;
     if (cy) {
+        if (!forceFitViewport) {
+            try {
+                preservedCyViewport = { zoom: cy.zoom(), pan: cy.pan() };
+            } catch {
+                preservedCyViewport = null;
+            }
+        } else {
+            preservedCyViewport = null;
+        }
         cy.destroy();
         cy = undefined;
     }
@@ -1023,16 +1389,24 @@ function renderCy() {
         },
         style: cyStyle
     });
-    
-    if (layout && layout.layout && layout.layout.length > 0) {
+
+    let appliedStoredOrPartialLayout = false;
+    if (entitiesAllHaveStoredPositions()) {
+        appliedStoredOrPartialLayout = true;
         cy.batch(() => {
-            cy.nodes('[type = "entity"]').forEach(ent => {
+            cy.nodes('[type = "entity"]').forEach((ent) => {
                 ent.position(positions[ent.id()]);
             });
         });
-    }
-    else {
-        console.log('here also');
+    } else if (layout && layout.layout && layout.layout.length > 0) {
+        appliedStoredOrPartialLayout = true;
+        cy.batch(() => {
+            cy.nodes('[type = "entity"]').forEach((ent) => {
+                const p = positions[ent.id()];
+                if (p) ent.position(p);
+            });
+        });
+    } else {
         cy.layout({
             name: 'dagre',
             rankDir: 'LR',
@@ -1042,9 +1416,13 @@ function renderCy() {
             nodeDimensionsIncludeLabels: false,
             animate: false
         }).run();
+        syncEntityPositionsMapFromCy();
     }
 
-    cy.nodes('[type = "entity"]').forEach(ent => cyPositionAttributes(ent));
+    cy.nodes('[type = "entity"]').forEach((ent) => cyPositionAttributes(ent));
+    if (appliedStoredOrPartialLayout) {
+        stabilizeStoredEntityPositionsInCy();
+    }
 
     cy.on('dragfree','node[type = "entity"]', (evt) => {
         console.log();
@@ -1065,6 +1443,8 @@ function renderCy() {
 
     cy.on('tap', (evt) => {
         if (evt.target === cy) {
+            selectedEntityId = null;
+            syncAddAttributeButtonState();
             clearDetailsPane();
         }
     });
@@ -1072,7 +1452,16 @@ function renderCy() {
     cy.on('tap', 'node', (evt) => {
         const nodeType = evt.target.data('type');
         if (nodeType === 'entity') {
+            selectedEntityId = evt.target.id();
+            syncAddAttributeButtonState();
             const ent = findEntityById(evt.target.id());
+            if (ent) renderEntityDetails(ent);
+            else renderDetailsError('Entity not found in model.');
+        } else if (nodeType === 'entity-header') {
+            const parentId = evt.target.data('parent');
+            selectedEntityId = parentId;
+            syncAddAttributeButtonState();
+            const ent = findEntityById(parentId);
             if (ent) renderEntityDetails(ent);
             else renderDetailsError('Entity not found in model.');
         } else if (nodeType === 'attribute') {
@@ -1088,6 +1477,26 @@ function renderCy() {
         if (rel) renderRelationshipDetails(rel);
         else renderDetailsError('Relationship not found in model.');
     });
+
+    cy.resize();
+    const vp = preservedCyViewport;
+    preservedCyViewport = null;
+    if (
+        vp != null &&
+        Number.isFinite(vp.zoom) &&
+        vp.pan &&
+        Number.isFinite(vp.pan.x) &&
+        Number.isFinite(vp.pan.y)
+    ) {
+        try {
+            cy.zoom(vp.zoom);
+            cy.pan(vp.pan);
+        } catch {
+            cy.fit(cy.elements(), 48);
+        }
+    } else {
+        cy.fit(cy.elements(), 48);
+    }
 
     if (!workspaceResizeInitialized) {
         initWorkspaceResize();
@@ -1183,6 +1592,34 @@ function cyPositionAttributes(ent){
     });   
 }
 
+/** Persist current entity centers from Cytoscape into `positions` (e.g. after drag or before re-render). */
+function syncEntityPositionsMapFromCy() {
+    if (!cy) return;
+    cy.nodes('[type = "entity"]').forEach((ent) => {
+        const id = ent.id();
+        const p = ent.position();
+        positions[id] = { x: p.x, y: p.y };
+    });
+}
+
+/**
+ * After placing attributes, compound layout can shift the parent entity; restore each entity center
+ * from `positions` and re-stack attributes so the entity does not move when children change.
+ */
+function stabilizeStoredEntityPositionsInCy() {
+    if (!cy) return;
+    cy.batch(() => {
+        cy.nodes('[type = "entity"]').forEach((ent) => {
+            const id = ent.id();
+            const p = positions[id];
+            if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+                ent.position(p);
+            }
+        });
+    });
+    cy.nodes('[type = "entity"]').forEach((ent) => cyPositionAttributes(ent));
+}
+
 function syncEntityAttributeOrderInCy(entityId) {
     if (!cy) return;
     const entCy = cy.getElementById(entityId);
@@ -1195,17 +1632,29 @@ function syncEntityAttributeOrderInCy(entityId) {
             n.data('attributeOrder', a.attribute_order);
         }
     }
+    const p = positions[entityId];
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        entCy.position(p);
+    }
+    cyPositionAttributes(entCy);
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        entCy.position(p);
+    }
     cyPositionAttributes(entCy);
 }
 
 function saveLayout() {
     if (!canonicalTechnicalName || !cy) return;
     const layout_arr = [];
-    cy.nodes('[type = "entity"]').forEach(ent => {
+    cy.nodes('[type = "entity"]').forEach((ent) => {
+        const id = ent.id();
+        const x = ent.position('x');
+        const y = ent.position('y');
+        positions[id] = { x, y };
         layout_arr.push({
-            entity_id: ent.id(),
-            x_coord: ent.position('x'),
-            y_coord: ent.position('y')
+            entity_id: id,
+            x_coord: x,
+            y_coord: y,
         });
     });
 
@@ -1273,6 +1722,154 @@ const cyStyle = [
     }
     
 ];
+
+function initAddAttributeDataTypeSelect() {
+    const sel = document.getElementById('add-attribute-data-type');
+    if (!sel) return;
+    sel.replaceChildren();
+    for (const v of SCHEMA_DATA_TYPES) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        sel.appendChild(opt);
+    }
+}
+
+function resetAddEntityForm() {
+    document.getElementById('add-entity-form')?.reset();
+}
+
+function openAddEntityDialog() {
+    if (!canonicalTechnicalName) {
+        alert('Open or create a model first.');
+        return;
+    }
+    resetAddEntityForm();
+    const bizInp = document.getElementById('add-entity-business-name');
+    if (bizInp) bizInp.oninput = () => syncAddEntityTechnicalPreview();
+    syncAddEntityTechnicalPreview();
+    document.getElementById('add-entity-dialog')?.showModal();
+    queueMicrotask(() => document.getElementById('add-entity-business-name')?.focus());
+}
+
+function submitAddEntity(ev) {
+    ev.preventDefault();
+    if (!canonicalTechnicalName) return;
+    const businessName = document.getElementById('add-entity-business-name')?.value?.trim() ?? '';
+    const technicalName = derivedEntityTechnicalNameForBusiness(businessName, undefined);
+    const entityType = document.getElementById('add-entity-type')?.value ?? '';
+    const definition = document.getElementById('add-entity-definition')?.value?.trim() ?? '';
+    if (!businessName || !definition) {
+        alert('Fill all required fields.');
+        return;
+    }
+    if (!isValidEntityAttributeTechnicalName(technicalName)) {
+        alert('Could not derive a valid technical name from the business name.');
+        return;
+    }
+    if (!SCHEMA_ENTITY_TYPES.includes(entityType)) {
+        alert('Invalid entity type.');
+        return;
+    }
+    const pos = computePositionForNewEntity();
+    const entity_id = crypto.randomUUID();
+    const newEnt = {
+        entity_id,
+        business_name: businessName,
+        technical_name: technicalName,
+        entity_type: entityType,
+        definition,
+        attributes: [],
+    };
+    if (!model.entities) model.entities = [];
+    model.entities.push(newEnt);
+    positions[entity_id] = { x: pos.x, y: pos.y };
+
+    document.getElementById('add-entity-dialog')?.close();
+    modelToNodesEdges();
+    fitCyViewportAfterNextRender = true;
+    renderCy();
+    selectedEntityId = entity_id;
+    syncAddAttributeButtonState();
+    renderEntityDetails(newEnt);
+    schedulePersistWorkingModel();
+    saveLayout();
+}
+
+function resetAddAttributeForm() {
+    const form = document.getElementById('add-attribute-form');
+    form?.reset();
+    initAddAttributeDataTypeSelect();
+}
+
+function openAddAttributeDialog() {
+    if (!canonicalTechnicalName) {
+        alert('Open or create a model first.');
+        return;
+    }
+    if (!selectedEntityId) {
+        alert('Select an entity on the diagram first.');
+        return;
+    }
+    resetAddAttributeForm();
+    const bizInp = document.getElementById('add-attribute-business-name');
+    if (bizInp) bizInp.oninput = () => syncAddAttributeTechnicalPreview();
+    syncAddAttributeTechnicalPreview();
+    document.getElementById('add-attribute-dialog')?.showModal();
+    queueMicrotask(() => document.getElementById('add-attribute-business-name')?.focus());
+}
+
+function submitAddAttribute(ev) {
+    ev.preventDefault();
+    if (!canonicalTechnicalName || !selectedEntityId) return;
+    const ent = findEntityById(selectedEntityId);
+    if (!ent) {
+        alert('Selected entity no longer exists.');
+        return;
+    }
+    const businessName = document.getElementById('add-attribute-business-name')?.value?.trim() ?? '';
+    const technicalName = derivedAttributeTechnicalNameForBusiness(businessName, ent, undefined);
+    const dataType = document.getElementById('add-attribute-data-type')?.value ?? '';
+    const definition = document.getElementById('add-attribute-definition')?.value?.trim() ?? '';
+    if (!businessName || !definition || !dataType) {
+        alert('Fill all required fields.');
+        return;
+    }
+    if (!isValidEntityAttributeTechnicalName(technicalName)) {
+        alert('Could not derive a valid technical name from the business name.');
+        return;
+    }
+    if (!SCHEMA_DATA_TYPES.includes(dataType)) {
+        alert('Invalid data type.');
+        return;
+    }
+    const attrs = ent.attributes || [];
+    let maxOrder = 0;
+    for (const a of attrs) {
+        const o = a.attribute_order;
+        if (typeof o === 'number' && o > maxOrder) maxOrder = o;
+    }
+    const newAttr = {
+        attribute_id: crypto.randomUUID(),
+        business_name: businessName,
+        technical_name: technicalName,
+        data_type: dataType,
+        definition,
+        attribute_order: maxOrder + 1,
+        key_type: null,
+    };
+    if (!ent.attributes) ent.attributes = [];
+    ent.attributes.push(newAttr);
+
+    document.getElementById('add-attribute-dialog')?.close();
+    modelToNodesEdges();
+    renderCy();
+    syncEntityAttributeOrderInCy(ent.entity_id);
+    renderAttributeDetails(newAttr);
+    schedulePersistWorkingModel();
+    saveLayout();
+}
+
 function resetNewModelForm() {
     const form = document.getElementById('new-model-form');
     if (form) form.reset();
@@ -1407,3 +2004,17 @@ async function saveCanonicalModel() {
 }
 
 document.getElementById('save-model-btn')?.addEventListener('click', () => saveCanonicalModel());
+
+initAddAttributeDataTypeSelect();
+document.getElementById('add-entity-btn')?.addEventListener('click', () => openAddEntityDialog());
+document.getElementById('add-attribute-btn')?.addEventListener('click', () => openAddAttributeDialog());
+document.getElementById('add-entity-form')?.addEventListener('submit', (ev) => submitAddEntity(ev));
+document.getElementById('add-entity-cancel')?.addEventListener('click', () => {
+    document.getElementById('add-entity-dialog')?.close();
+});
+document.getElementById('add-attribute-form')?.addEventListener('submit', (ev) => submitAddAttribute(ev));
+document.getElementById('add-attribute-cancel')?.addEventListener('click', () => {
+    document.getElementById('add-attribute-dialog')?.close();
+});
+
+void loadNamingConfig();

@@ -335,6 +335,25 @@ def api_list_technical_names():
     return jsonify({'technical_names': list_technical_names()})
 
 
+@app.route('/api/naming_config', methods=['GET'])
+def api_naming_config():
+    path = os.path.join('data', 'config', 'naming_config.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+    except OSError as e:
+        logger.error('naming_config read failed: %s', e)
+        return jsonify({'error': 'could not load naming config'}), 500
+    try:
+        with open('schemas/naming.json', encoding='utf-8') as f:
+            naming_schema = json.load(f)
+        jsonschema.validate(instance=data, schema=naming_schema)
+    except jsonschema.ValidationError as e:
+        logger.error('naming_config validation failed: %s', e)
+        return jsonify({'error': str(e)}), 500
+    return jsonify(data)
+
+
 @app.route('/api/load_model', methods=['POST'])
 def api_load_model():
     path_stem = path_stem_from_load_json()
