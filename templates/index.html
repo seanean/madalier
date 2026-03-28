@@ -5,12 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title> Madalier </title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
             display: flex;
             flex-direction: column;
             min-height: 100vh;
+            font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', monospace;
         }
 
         .app-header {
@@ -109,8 +113,8 @@
         }
 
         .details-readonly-value {
-            font-size: 0.85rem;
-            color: #333;
+            font-size: inherit;
+            color: inherit;
             margin-top: 0.15rem;
         }
 
@@ -199,7 +203,10 @@
             border-radius: 4px;
         }
 
-        input.details-field-control:read-only {
+        input.details-field-control:read-only,
+        textarea.details-field-control:read-only,
+        select.details-field-control:disabled,
+        .details-field-control.details-static {
             background: #f4f4f4;
             color: #444;
             cursor: default;

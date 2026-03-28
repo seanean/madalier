@@ -1,6 +1,69 @@
-const CARD_WIDTH = 220;
+/** Minimum entity card width (px); actual width from label measure + padding. */
+const MIN_CARD_WIDTH = 220;
 const HEADER_H = 28;
 const ROW_H = 24;
+
+/**
+ * Must match the diagram font in `cyStyle` and roughly match `body` in index.html.
+ * Cytoscape ignores typical CSS-quoted stacks (see cytoscape.js#933); use an unquoted list.
+ */
+const DIAGRAM_LABEL_FONT_PX = 14;
+const DIAGRAM_FONT_FAMILY =
+    'JetBrains Mono, ui-monospace, Cascadia Code, Consolas, DejaVu Sans Mono, monospace';
+const DIAGRAM_LABEL_FONT = `${DIAGRAM_LABEL_FONT_PX}px ${DIAGRAM_FONT_FAMILY}`;
+
+const CARD_H_PADDING = 32;
+
+let _measureLabelCanvas;
+function measureLabelWidth(text) {
+    const t = text == null ? '' : String(text);
+    if (!_measureLabelCanvas) {
+        _measureLabelCanvas = document.createElement('canvas');
+    }
+    const ctx = _measureLabelCanvas.getContext('2d');
+    ctx.font = DIAGRAM_LABEL_FONT;
+    return ctx.measureText(t).width;
+}
+
+function computeCardWidthForEntity(ent) {
+    const nameW = measureLabelWidth(ent?.business_name ?? '');
+    const attrs = ent?.attributes || [];
+    let maxAttrW = 0;
+    for (const a of attrs) {
+        maxAttrW = Math.max(maxAttrW, measureLabelWidth(a?.business_name ?? ''));
+    }
+    const contentW = attrs.length === 0 ? nameW : Math.max(nameW, maxAttrW);
+    return Math.max(MIN_CARD_WIDTH, Math.ceil(contentW + CARD_H_PADDING));
+}
+
+/** ER line ends: parent side = edge source, child side = edge target. */
+function erArrowStyleForSide(cardinality, mandatory) {
+    const many = cardinality === 'Many';
+    const req = mandatory === true;
+    if (many) {
+        return { shape: 'vee', fill: req ? 'filled' : 'hollow' };
+    }
+    return { shape: req ? 'tee' : 'circle', fill: req ? 'filled' : 'hollow' };
+}
+
+function syncEntityCardWidthInCy(entityId) {
+    if (!cy) return;
+    const ent = findEntityById(entityId);
+    if (!ent) return;
+    const w = computeCardWidthForEntity(ent);
+    cy.batch(() => {
+        const entN = cy.getElementById(entityId);
+        if (entN.nonempty()) entN.data('cardWidth', w);
+        const hdr = cy.getElementById(`${entityId}_hdr`);
+        if (hdr.nonempty()) hdr.data('cardWidth', w);
+        cy.nodes().forEach((n) => {
+            if (n.data('parent') === entityId && n.data('type') === 'attribute') {
+                n.data('cardWidth', w);
+            }
+        });
+    });
+    cy.style().update();
+}
 
 let model = {};
 let layout = {};
@@ -10,7 +73,7 @@ let edges = [];
 /** Canonical meta.technical_name; files are &lt;technical_name&gt;.json and temp_&lt;technical_name&gt; while editing. */
 let canonicalTechnicalName = null;
 let workspaceResizeInitialized = false;
-cy = undefined;
+let cy;
 
 /** Matches [schemas/model.json](schemas/model.json) entity_type.enum */
 const SCHEMA_ENTITY_TYPES = ['view', 'table'];
@@ -627,7 +690,7 @@ function computePositionForNewEntity() {
     if (!leftNode) return { x: 0, y: 0 };
     const bb = leftNode.boundingbox({ includeLabels: true });
     const gap = 120;
-    const newW = Math.max(CARD_WIDTH * 1.5, bb.w);
+    const newW = Math.max(MIN_CARD_WIDTH * 1.5, bb.w);
     const newX = bb.x1 - gap - newW / 2;
     const newY = leftNode.position('y');
     return { x: newX, y: newY };
@@ -643,6 +706,7 @@ function patchRelationshipEdgeData(rel) {
     e.data('childMandatory', rel.child_mandatory);
     e.data('parentCardinality', rel.parent_cardinality);
     e.data('childCardinality', rel.child_cardinality);
+    cy.style().update();
 }
 
 function patchEntityLabelInCy(entityId, businessName) {
@@ -658,6 +722,7 @@ function patchEntityLabelInCy(entityId, businessName) {
         hdr.data('label', label);
         hdr.data('businessName', label);
     }
+    syncEntityCardWidthInCy(entityId);
 }
 
 function patchAttributeLabelInCy(attributeId, businessName) {
@@ -667,6 +732,8 @@ function patchAttributeLabelInCy(attributeId, businessName) {
         n.data('label', businessName ?? '');
         n.data('businessName', businessName ?? '');
     }
+    const ent = findEntityContainingAttribute(attributeId);
+    if (ent) syncEntityCardWidthInCy(ent.entity_id);
 }
 
 function patchEntityTechnicalNameInCy(entityId, technicalName) {
@@ -1124,7 +1191,7 @@ function renderRelationshipDetails(rel) {
         schedulePersistWorkingModel();
     }
     const cardinalityValueEl = document.createElement('div');
-    cardinalityValueEl.className = 'details-readonly-value';
+    cardinalityValueEl.className = 'details-field-control details-static';
     cardinalityValueEl.textContent = rel.cardinality;
 
     addSideCardinalitySelect('parent_cardinality', rel.parent_cardinality, (v) => {
@@ -1189,7 +1256,7 @@ function ensureModelMeta() {
 
 function appendDetailsReadonlyField(form, labelText, textContent) {
     const el = document.createElement('div');
-    el.className = 'details-readonly-value';
+    el.className = 'details-static';
     el.textContent = textContent ?? '';
     appendDetailsFormField(form, labelText, el);
 }
@@ -1318,6 +1385,7 @@ function modelToNodesEdges() {
     const entities = model.entities || [];
     const relationships = model.relationships || [];
     for (const ent of entities) {
+        const cardWidth = computeCardWidthForEntity(ent);
         nodes.push(
             {
                 data: {
@@ -1328,7 +1396,8 @@ function modelToNodesEdges() {
                     entityType: ent.entity_type,
                     definition: ent.definition,
                     type: 'entity',
-                    attributes: ent.attributes
+                    attributes: ent.attributes,
+                    cardWidth,
                 }
             }
         )
@@ -1342,7 +1411,8 @@ function modelToNodesEdges() {
                     entityType: ent.entity_type,
                     definition: ent.definition,
                     parent: ent.entity_id,
-                    type: 'entity-header'
+                    type: 'entity-header',
+                    cardWidth,
                 }
             }
         )
@@ -1362,7 +1432,8 @@ function modelToNodesEdges() {
                         definition: attr.definition,
                         parent: ent.entity_id,
                         type: 'attribute',
-                        attributeOrder: attr.attribute_order
+                        attributeOrder: attr.attribute_order,
+                        cardWidth,
                     }
                 }
             )
@@ -1526,6 +1597,19 @@ function renderCy() {
         }
     } else {
         cy.fit(cy.elements(), 48);
+    }
+
+    const fontsReady = document.fonts?.ready;
+    if (fontsReady && typeof fontsReady.then === 'function') {
+        fontsReady.then(() => {
+            if (!cy) return;
+            cy.style().update();
+            try {
+                cy.resize();
+            } catch {
+                /* ignore */
+            }
+        });
     }
 
     if (!workspaceResizeInitialized) {
@@ -1699,6 +1783,11 @@ function saveLayout() {
     });
 }
 
+function cyNodeCardWidth(ele) {
+    const w = ele.data('cardWidth');
+    return typeof w === 'number' && w > 0 ? w : MIN_CARD_WIDTH;
+}
+
 const cyStyle = [
     {
         selector: 'node[type = "entity"]',
@@ -1713,6 +1802,7 @@ const cyStyle = [
             'text-halign': 'center',
             'compound-sizing-wrt-labels': 'exclude',
             'background-color': '#a9d1f1',
+            'min-width': cyNodeCardWidth,
         }
     },
     {
@@ -1720,13 +1810,15 @@ const cyStyle = [
         style: {
             'shape': 'rectangle',
             'label': 'data(label)',
-            'width': `${CARD_WIDTH}px`,
+            'width': cyNodeCardWidth,
             'height': `${ROW_H}px`,
             'text-valign': 'center',
             'text-halign': 'center',
             'background-color': '#f0f0f0',
             'border-color': '#ccc',
-            'border-width': 1
+            'border-width': 1,
+            'font-family': DIAGRAM_FONT_FAMILY,
+            'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
         }
     },
     {
@@ -1738,6 +1830,10 @@ const cyStyle = [
             'text-valign': 'center',
             'text-halign': 'center',
             'background-opacity': 0,
+            'width': cyNodeCardWidth,
+            'height': `${HEADER_H}px`,
+            'font-family': DIAGRAM_FONT_FAMILY,
+            'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
         }
     },
     {
@@ -1745,12 +1841,46 @@ const cyStyle = [
         style: {
             'width': 2,
             'label': 'data(label)',
-            'curve-style':'taxi',
+            'curve-style': 'taxi',
             'taxi-direction': 'horizontal',
-            'taxi-turn': 50
+            'taxi-turn': 50,
+            'line-color': '#444',
+            'target-arrow-color': '#444',
+            'source-arrow-color': '#444',
+            'source-arrow-scale': 1.35,
+            'target-arrow-scale': 1.35,
+            'source-arrow-shape'(ele) {
+                const s = erArrowStyleForSide(
+                    ele.data('parentCardinality'),
+                    ele.data('parentMandatory'),
+                );
+                return s.shape;
+            },
+            'source-arrow-fill'(ele) {
+                return erArrowStyleForSide(
+                    ele.data('parentCardinality'),
+                    ele.data('parentMandatory'),
+                ).fill;
+            },
+            'target-arrow-shape'(ele) {
+                const s = erArrowStyleForSide(
+                    ele.data('childCardinality'),
+                    ele.data('childMandatory'),
+                );
+                return s.shape;
+            },
+            'target-arrow-fill'(ele) {
+                return erArrowStyleForSide(
+                    ele.data('childCardinality'),
+                    ele.data('childMandatory'),
+                ).fill;
+            },
+            'font-family': DIAGRAM_FONT_FAMILY,
+            'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
+            'color': '#333',
         }
     }
-    
+
 ];
 
 function initAddAttributeDataTypeSelect() {
