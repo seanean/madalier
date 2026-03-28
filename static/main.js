@@ -1,3 +1,5 @@
+import { toPng } from './vendor/html-to-image.bundle.js';
+
 /** Minimum entity card width (px); actual width from label measure + padding. */
 const MIN_CARD_WIDTH = 220;
 const HEADER_H = 28;
@@ -199,7 +201,7 @@ function drawErEndpoint(ctx, x, y, angleRad, many, optional) {
 
 function syncErOverlayCanvasSize() {
     const canvas = document.getElementById('cy-er-overlay');
-    const panel = document.querySelector('.diagram-panel');
+    const panel = document.querySelector('.diagram-canvas-stack');
     if (!canvas || !panel) return null;
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.floor(panel.clientWidth));
@@ -222,7 +224,7 @@ function scheduleErOverlayRedraw() {
 }
 
 function drawErRelationshipOverlay() {
-    const panel = document.querySelector('.diagram-panel');
+    const panel = document.querySelector('.diagram-canvas-stack');
     if (!panel || !cy) return;
     const ctx = syncErOverlayCanvasSize();
     if (!ctx) return;
@@ -640,6 +642,7 @@ async function applyPendingMetaTechnicalRename() {
         detailsPersistErrorText = null;
         syncDetailsPersistBanner();
         schedulePersistWorkingModel();
+        refreshDiagramMetaStrip();
         return;
     }
 
@@ -660,6 +663,7 @@ async function applyPendingMetaTechnicalRename() {
         model.meta.technical_name = target;
         lastValidModelMetaName = name;
         schedulePersistWorkingModel();
+        refreshDiagramMetaStrip();
         return;
     }
     const from = canonicalTechnicalName;
@@ -684,6 +688,7 @@ async function applyPendingMetaTechnicalRename() {
     syncDetailsPersistBanner();
     schedulePersistWorkingModel();
     lastValidModelMetaName = name;
+    refreshDiagramMetaStrip();
 }
 
 async function retrieveModel(technicalName, working) {
@@ -1453,6 +1458,61 @@ function ensureModelMeta() {
     }
 }
 
+/** Fills #diagram-meta-strip from `model.meta` or empty state when no model is open. */
+function refreshDiagramMetaStrip() {
+    const strip = document.getElementById('diagram-meta-strip');
+    if (!strip) return;
+    strip.replaceChildren();
+    if (!canonicalTechnicalName) {
+        strip.classList.add('is-empty');
+        strip.textContent = 'Open or create a model to see metadata above the diagram.';
+        return;
+    }
+    strip.classList.remove('is-empty');
+    ensureModelMeta();
+    const meta = model.meta || {};
+    const title = document.createElement('h3');
+    title.className = 'diagram-meta-title';
+    const nameSpan = document.createElement('span');
+    const tn = (meta.technical_name ?? canonicalTechnicalName ?? '').trim();
+    nameSpan.textContent = ((meta.name ?? '').trim() || canonicalTechnicalName) + ` (${tn})`;
+    title.appendChild(nameSpan);
+    const ver = (meta.version ?? '').trim();
+    if (ver) {
+        const v = document.createElement('span');
+        v.className = 'diagram-meta-version';
+        v.textContent = `v${ver}`;
+        title.appendChild(v);
+    }
+    strip.appendChild(title);
+    const line1 = document.createElement('p');
+    line1.className = 'diagram-meta-line';
+    // const tn = (meta.technical_name ?? canonicalTechnicalName ?? '').trim();
+    // const cb = (meta.created_by ?? '').trim();
+    // const parts = [];
+    // if (tn) parts.push(`technical_name: ${tn}`);
+    // if (cb) parts.push(`created_by: ${cb}`);
+    // line1.textContent = parts.length ? parts.join(' · ') : canonicalTechnicalName;
+    line1.textContent = `created_by: ${(meta.created_by ?? '').trim()}`;
+    strip.appendChild(line1);
+    const desc = (meta.description ?? '').trim();
+    if (desc) {
+        const p = document.createElement('p');
+        p.className = 'diagram-meta-desc';
+        p.textContent = desc;
+        strip.appendChild(p);
+    }
+    const dates = document.createElement('p');
+    dates.className = 'diagram-meta-dates';
+    dates.textContent = `created ${formatMetaIsoDate(meta.created)} · modified ${formatMetaIsoDate(meta.modified)}`;
+    strip.appendChild(dates);
+}
+
+/* Helper function for display: convert `2026-03-28T08:38:35.770638Z` to `2026-03-28 08:38:35 UTC` */
+function formatMetaIsoDate(isoDate) {
+    return String(isoDate).replace('T', ' ').replace(/\.\d+/, '').replace('Z', ' UTC');
+}
+
 function appendDetailsReadonlyField(form, labelText, textContent) {
     const el = document.createElement('div');
     el.className = 'details-static';
@@ -1501,6 +1561,7 @@ function renderModelMetadataDetails() {
             }
             schedulePersistWorkingModel();
         }
+        refreshDiagramMetaStrip();
         clearTimeout(metaRenameTimer);
         metaRenameTimer = setTimeout(() => applyPendingMetaTechnicalRename(), 450);
     });
@@ -1522,6 +1583,7 @@ function renderModelMetadataDetails() {
     inpVersion.addEventListener('input', () => {
         meta.version = inpVersion.value;
         schedulePersistWorkingModel();
+        refreshDiagramMetaStrip();
     });
     appendDetailsFormField(form, 'version', inpVersion);
 
@@ -1531,6 +1593,7 @@ function renderModelMetadataDetails() {
     inpCreatedBy.addEventListener('input', () => {
         meta.created_by = inpCreatedBy.value;
         schedulePersistWorkingModel();
+        refreshDiagramMetaStrip();
     });
     appendDetailsFormField(form, 'created_by', inpCreatedBy);
 
@@ -1540,6 +1603,7 @@ function renderModelMetadataDetails() {
     taDesc.addEventListener('input', () => {
         meta.description = taDesc.value;
         schedulePersistWorkingModel();
+        refreshDiagramMetaStrip();
     });
     appendDetailsFormField(form, 'description', taDesc);
 
@@ -1547,6 +1611,7 @@ function renderModelMetadataDetails() {
     appendDetailsReadonlyField(form, 'modified', meta.modified ?? '');
 
     root.appendChild(form);
+    refreshDiagramMetaStrip();
 }
 
 function renderDetailsError(message) {
@@ -1573,6 +1638,7 @@ function clearDetailsPane() {
         p.className = 'details-placeholder';
         p.textContent = 'Open or create a model to view metadata and diagram elements.';
         root.appendChild(p);
+        refreshDiagramMetaStrip();
         return;
     }
     renderModelMetadataDetails();
@@ -2523,6 +2589,51 @@ async function saveCanonicalModel() {
 
 document.getElementById('save-model-btn')?.addEventListener('click', () => saveCanonicalModel());
 
+async function exportDiagramPng() {
+    if (!canonicalTechnicalName || !cy) {
+        alert('Open or create a model first.');
+        return;
+    }
+    const root = document.getElementById('diagram-export-root');
+    if (!root) return;
+    const btn = document.getElementById('export-diagram-btn');
+    if (btn) btn.disabled = true;
+    try {
+        cy.resize();
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        drawErRelationshipOverlay();
+        await new Promise((r) => requestAnimationFrame(r));
+        const dataUrl = await toPng(root, {
+            pixelRatio: 2,
+            backgroundColor: '#ffffff',
+            cacheBust: true,
+        });
+        const m = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+        const b64 = m ? m[1] : dataUrl;
+        const res = await fetch('/api/save_diagram_png', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                technical_name: canonicalTechnicalName,
+                png_base64: b64,
+            }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            alert(data.error || res.statusText || 'Could not save diagram PNG.');
+            return;
+        }
+        alert(`Diagram saved to data/models/diagrams/${canonicalTechnicalName}.png`);
+    } catch (e) {
+        console.error(e);
+        alert(e.message || 'Export failed.');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+document.getElementById('export-diagram-btn')?.addEventListener('click', () => void exportDiagramPng());
+
 initAddAttributeDataTypeSelect();
 syncAddRelationshipButtonState();
 wireAddRelationshipDialogControls();
@@ -2543,3 +2654,4 @@ document.getElementById('add-relationship-cancel')?.addEventListener('click', ()
 });
 
 void loadNamingConfig();
+refreshDiagramMetaStrip();

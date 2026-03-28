@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from app_logger import get_logger
+import base64
+import binascii
 import json
 import jsonschema
 import os
@@ -70,6 +72,11 @@ def path_stem_from_envelope(data, *, require_working=False):
 
 MODELS_DIR = os.path.join('data', 'models')
 LAYOUTS_DIR = os.path.join(MODELS_DIR, 'layouts')
+DIAGRAMS_DIR = os.path.join(MODELS_DIR, 'diagrams')
+
+# Reject absurd uploads (decoded PNG bytes).
+MAX_DIAGRAM_PNG_BYTES = 15 * 1024 * 1024
+PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
 
 
 def list_technical_names():
@@ -430,6 +437,41 @@ def api_save_working_model():
     except OSError as e:
         logger.error('save_working_model write failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/save_diagram_png', methods=['POST'])
+def api_save_diagram_png():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ApiError('expected JSON object')
+    tn = parse_technical_name_field(data)
+    raw_b64 = data.get('png_base64')
+    if not isinstance(raw_b64, str) or not raw_b64.strip():
+        raise ApiError('png_base64 is required')
+    s = raw_b64.strip()
+    if s.startswith('data:') and ',' in s:
+        s = s.split(',', 1)[1]
+    try:
+        png_bytes = base64.b64decode(s, validate=True)
+    except binascii.Error:
+        raise ApiError('invalid base64')
+    if len(png_bytes) > MAX_DIAGRAM_PNG_BYTES:
+        raise ApiError('PNG too large')
+    if not png_bytes.startswith(PNG_MAGIC):
+        raise ApiError('not a PNG image')
+    wstem = working_stem(tn)
+    if not os.path.isfile(model_json_path(wstem)) and tn not in list_technical_names():
+        raise ApiError('unknown model', 404)
+    os.makedirs(DIAGRAMS_DIR, exist_ok=True)
+    out_path = os.path.join(DIAGRAMS_DIR, f'{tn}.png')
+    try:
+        with open(out_path, 'wb') as f:
+            f.write(png_bytes)
+        logger.info('Saved diagram PNG %s', out_path)
+    except OSError as e:
+        logger.error('save_diagram_png write failed: %s', e)
+        raise ApiError(str(e), 500)
+    return jsonify({'success': True}), 200
 
 
 @app.route('/api/save_layout', methods=['POST'])

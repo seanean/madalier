@@ -54,6 +54,69 @@
             min-width: 0;
             min-height: 0;
             position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #diagram-export-root {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .diagram-meta-strip {
+            flex-shrink: 0;
+            padding: 0.55rem 0.75rem;
+            border-bottom: 1px solid #ccc;
+            background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+            font-size: 0.8rem;
+            line-height: 1.35;
+        }
+
+        .diagram-meta-strip.is-empty {
+            color: #666;
+            font-style: italic;
+        }
+
+        .diagram-meta-strip .diagram-meta-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #222;
+            margin: 0 0 0.2rem;
+        }
+
+        .diagram-meta-strip .diagram-meta-title .diagram-meta-version {
+            font-weight: 500;
+            color: #555;
+            margin-left: 0.35rem;
+        }
+
+        .diagram-meta-strip .diagram-meta-line {
+            margin: 0;
+            color: #444;
+            word-break: break-word;
+        }
+
+        .diagram-meta-strip .diagram-meta-desc {
+            margin: 0.35rem 0 0;
+            color: #333;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .diagram-meta-strip .diagram-meta-dates {
+            margin: 0.35rem 0 0;
+            font-size: 0.72rem;
+            color: #666;
+        }
+
+        .diagram-canvas-stack {
+            flex: 1;
+            min-height: 0;
+            position: relative;
         }
 
         #cy {
@@ -405,15 +468,22 @@
         <button type="button" id="add-attribute-btn" disabled>Add attribute</button>
         <button type="button" id="add-relationship-btn" disabled>Add relationship</button>
         <button type="button">Remove selected</button>
-        <button type="button">Export diagram</button>
+        <button type="button" id="export-diagram-btn">Export diagram</button>
         <button type="button">Export DDL</button>
         <button type="button">Export CSV</button>
     </header>
     <main class="app-main">
         <div class="app-workspace">
             <div class="diagram-panel">
-                <div id="cy"></div>
-                <canvas id="cy-er-overlay" width="300" height="150" aria-hidden="true"></canvas>
+                <div id="diagram-export-root">
+                    <div id="diagram-meta-strip" class="diagram-meta-strip is-empty" aria-live="polite">
+                        Open or create a model to see metadata above the diagram.
+                    </div>
+                    <div class="diagram-canvas-stack">
+                        <div id="cy"></div>
+                        <canvas id="cy-er-overlay" width="300" height="150" aria-hidden="true"></canvas>
+                    </div>
+                </div>
             </div>
             <div class="splitter" role="separator" aria-orientation="vertical"
                 aria-label="Resize details panel" tabindex="0"></div>
