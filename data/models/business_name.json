@@ -67,9 +67,9 @@
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-28T05:48:40.750773Z",
-        "name": "new name",
-        "technical_name": "new_name",
+        "modified": "2026-03-28T06:14:25.560980Z",
+        "name": "business Name",
+        "technical_name": "business_name",
         "version": "1.0.0"
     },
     "relationships": [

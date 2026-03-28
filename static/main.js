@@ -36,6 +36,10 @@ let pendingDerivedTechnical = null;
 let openedAsTechnicalName = null;
 /** Live metadata technical field (for post-rename DOM sync). */
 let metadataTechnicalInputEl = null;
+/** Live metadata name field (restore after empty-name validation). */
+let metadataNameInputEl = null;
+/** Last non-empty trimmed model name; used to revert illegal clears. */
+let lastValidModelMetaName = '';
 
 /** Letters, numbers, spaces, and underscores only (Unicode letters and numbers). */
 function sanitizeMetaModelName(raw) {
@@ -56,6 +60,10 @@ function applyMetaModelNameSanitizeToInput(el) {
     return el.value;
 }
 
+/**
+ * Maps display name to lower_snake_case technical stem, or null if the name cannot produce a valid id
+ * (must match TECHNICAL_NAME_RE: letter first, then letters/digits/underscores). No automatic fixes.
+ */
 function displayNameToTechnicalName(displayName) {
     let s = String(displayName ?? '').trim().toLowerCase();
     try {
@@ -64,45 +72,79 @@ function displayNameToTechnicalName(displayName) {
         /* ignore if unsupported */
     }
     s = s.replace(/[^a-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-    if (!s) return 'model';
-    if (!/^[a-z]/.test(s)) s = `m_${s}`;
+    if (!s) return null;
+    if (!/^[a-z]/.test(s)) return null;
     s = s.replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
-    if (!s) return 'model';
-    if (!/^[a-z]/.test(s)) s = `m_${s}`;
-    if (!TECHNICAL_NAME_RE.test(s)) return 'model';
+    if (!s) return null;
+    if (!/^[a-z]/.test(s)) return null;
+    if (!TECHNICAL_NAME_RE.test(s)) return null;
     return s;
 }
 
 async function renameWorkingToTechnicalName(fromTn, desiredTn) {
-    const base = desiredTn;
-    for (let suffix = 0; suffix < 50; suffix++) {
-        const candidate = suffix === 0 ? base : `${base}_${suffix + 1}`;
-        if (!TECHNICAL_NAME_RE.test(candidate)) continue;
-        const res = await fetch('/api/rename_working_model', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                from_technical_name: fromTn,
-                to_technical_name: candidate,
-            }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && data.success) {
-            return { ok: true, technical_name: data.technical_name ?? candidate };
-        }
-        if (res.status === 409) continue;
-        return { ok: false, error: data.error || res.statusText || 'Rename failed' };
+    if (!TECHNICAL_NAME_RE.test(desiredTn)) {
+        return { ok: false, error: 'Invalid technical name format.' };
     }
-    return { ok: false, error: 'Could not find an available technical name.' };
+    const res = await fetch('/api/rename_working_model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            from_technical_name: fromTn,
+            to_technical_name: desiredTn,
+        }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+        return { ok: true, technical_name: data.technical_name ?? desiredTn };
+    }
+    return { ok: false, error: data.error || res.statusText || 'Rename failed' };
 }
 
 async function applyPendingMetaTechnicalRename() {
     metaRenameTimer = null;
     const target = pendingDerivedTechnical;
-    if (target == null || !canonicalTechnicalName) return;
+    if (!canonicalTechnicalName) return;
+
+    const name = (model.meta?.name ?? '').trim();
+    if (!name) {
+        const msg = 'Model name cannot be empty.';
+        detailsPersistErrorText = msg;
+        syncDetailsPersistBanner();
+        alert(msg);
+        ensureModelMeta();
+        const revert = lastValidModelMetaName || canonicalTechnicalName;
+        model.meta.name = revert;
+        if (metadataNameInputEl?.isConnected) {
+            metadataNameInputEl.value = revert;
+        }
+        const d = displayNameToTechnicalName(revert);
+        pendingDerivedTechnical = d;
+        if (metadataTechnicalInputEl?.isConnected) {
+            const stem = model.meta.technical_name ?? canonicalTechnicalName ?? '';
+            metadataTechnicalInputEl.value = d ?? stem;
+        }
+        detailsPersistErrorText = null;
+        syncDetailsPersistBanner();
+        schedulePersistWorkingModel();
+        return;
+    }
+
+    if (target == null) {
+        const msg =
+            'This model name does not produce a valid technical id. Use a name that starts with a letter (after spaces are removed) and only yields letters, numbers, and underscores — or pick a different name.';
+        detailsPersistErrorText = msg;
+        syncDetailsPersistBanner();
+        alert(msg);
+        if (metadataTechnicalInputEl?.isConnected) {
+            metadataTechnicalInputEl.value = canonicalTechnicalName;
+        }
+        return;
+    }
+
     if (target === canonicalTechnicalName) {
         ensureModelMeta();
         model.meta.technical_name = target;
+        lastValidModelMetaName = name;
         schedulePersistWorkingModel();
         return;
     }
@@ -111,6 +153,7 @@ async function applyPendingMetaTechnicalRename() {
     if (!r.ok) {
         detailsPersistErrorText = r.error;
         syncDetailsPersistBanner();
+        alert(r.error);
         if (metadataTechnicalInputEl?.isConnected) {
             metadataTechnicalInputEl.value = canonicalTechnicalName;
         }
@@ -126,6 +169,7 @@ async function applyPendingMetaTechnicalRename() {
     detailsPersistErrorText = null;
     syncDetailsPersistBanner();
     schedulePersistWorkingModel();
+    lastValidModelMetaName = name;
 }
 
 async function retrieveModel(technicalName, working) {
@@ -169,6 +213,7 @@ async function loadWorkingCopyAndRender(technicalName) {
     canonicalTechnicalName = technicalName;
     openedAsTechnicalName = technicalName;
     await retrieveModel(technicalName, true);
+    lastValidModelMetaName = (model.meta?.name ?? '').trim() || technicalName;
     await retrieveLayout(technicalName, true);
     modelToNodesEdges();
     console.log('Nodes created:', nodes.length);
@@ -327,6 +372,11 @@ function schedulePersistWorkingModel() {
 /** Persists in-memory `model` to temp_<technical_name>.json. Returns whether the write succeeded. */
 async function persistWorkingModel() {
     if (!canonicalTechnicalName) return true;
+    if (!(model.meta?.name ?? '').trim()) {
+        detailsPersistErrorText = 'Model name cannot be empty.';
+        syncDetailsPersistBanner();
+        return false;
+    }
     try {
         const res = await fetch('/api/save_working_model', {
             method: 'POST',
@@ -773,9 +823,15 @@ function renderModelMetadataDetails() {
         schedulePersistWorkingModel();
     }
     pendingDerivedTechnical = displayNameToTechnicalName(meta.name ?? '');
+    if ((meta.name ?? '').trim()) {
+        lastValidModelMetaName = (meta.name ?? '').trim();
+    }
     const shell = beginDetailsPane('Model metadata');
     if (!shell) return;
     const { root, form } = shell;
+
+    const committedStem = meta.technical_name ?? canonicalTechnicalName ?? '';
+    const derivedPreview = displayNameToTechnicalName(meta.name ?? '');
 
     const inpName = document.createElement('input');
     inpName.type = 'text';
@@ -786,20 +842,30 @@ function renderModelMetadataDetails() {
         applyMetaModelNameSanitizeToInput(inpName);
         meta.name = inpName.value;
         const derived = displayNameToTechnicalName(meta.name);
-        inpTechnical.value = derived;
+        const stem = meta.technical_name ?? canonicalTechnicalName ?? '';
+        inpTechnical.value = derived ?? stem;
         pendingDerivedTechnical = derived;
+        const trimmed = (meta.name ?? '').trim();
+        if (trimmed) {
+            lastValidModelMetaName = trimmed;
+            if (derived != null) {
+                detailsPersistErrorText = null;
+                syncDetailsPersistBanner();
+            }
+            schedulePersistWorkingModel();
+        }
         clearTimeout(metaRenameTimer);
         metaRenameTimer = setTimeout(() => applyPendingMetaTechnicalRename(), 450);
-        schedulePersistWorkingModel();
     });
     appendDetailsFormField(form, 'name', inpName);
+    metadataNameInputEl = inpName;
 
     const inpTechnical = document.createElement('input');
     inpTechnical.type = 'text';
     inpTechnical.readOnly = true;
-    inpTechnical.value = meta.technical_name ?? canonicalTechnicalName ?? '';
+    inpTechnical.value = derivedPreview ?? committedStem;
     inpTechnical.title =
-        'Derived from the model name (lower_snake_case). Renames working files after you pause typing.';
+        'Preview of the technical id from the model name (lower_snake_case). If the name cannot produce a valid id, or that id is already taken, you will be asked to change the name.';
     metadataTechnicalInputEl = inpTechnical;
     appendDetailsFormField(form, 'technical_name', inpTechnical);
 
