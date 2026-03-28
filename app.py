@@ -72,9 +72,6 @@ def path_stem_from_envelope(data, *, require_working=False):
     return path_stem
 
 MODELS_DIR = os.path.join('data', 'models')
-LAYOUTS_DIR = os.path.join(MODELS_DIR, 'layouts')
-DIAGRAMS_DIR = os.path.join(MODELS_DIR, 'diagrams')
-CSV_DIR = os.path.join(MODELS_DIR, 'csv')
 
 MODEL_CSV_COLUMNS = (
     'entity_type',
@@ -96,15 +93,34 @@ MAX_DIAGRAM_PNG_BYTES = 15 * 1024 * 1024
 PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
 
 
-def list_technical_names():
-    """Canonical models on disk: file stem equals meta.technical_name (excludes temp_* working files)."""
-    names = []
-    for name in os.listdir(MODELS_DIR):
+def _iter_model_subdirs():
+    """Yield (name, abspath) for direct subdirectories of MODELS_DIR."""
+    if not os.path.isdir(MODELS_DIR):
+        return
+    for name in sorted(os.listdir(MODELS_DIR)):
         path = os.path.join(MODELS_DIR, name)
-        if os.path.isfile(path) and name.lower().endswith('.json'):
-            stem = os.path.splitext(name)[0]
-            if not stem.startswith('temp_'):
-                names.append(stem)
+        if os.path.isdir(path):
+            yield name, path
+
+
+def _find_json_in_model_subdirs(filename):
+    """Return absolute path to MODELS_DIR/<subdir>/<filename> if it exists, else None."""
+    for _, subdir_path in _iter_model_subdirs():
+        p = os.path.join(subdir_path, filename)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def list_technical_names():
+    """Canonical models: data/models/<technical_name>/<technical_name>.json (technical_name from folder name)."""
+    names = []
+    for name, path in _iter_model_subdirs():
+        if not TECHNICAL_NAME_RE.fullmatch(name):
+            continue
+        canon = os.path.join(path, f'{name}.json')
+        if os.path.isfile(canon):
+            names.append(name)
     return sorted(names)
 
 
@@ -113,12 +129,39 @@ def working_stem(technical_name):
     return f'temp_{technical_name}'
 
 
+def model_subdir_for_stem(stem):
+    """
+    Directory for this path stem. Canonical stem => data/models/<stem>/.
+    Working temp_* => directory that already contains <stem>.json, else data/models/<suffix>/ for temp_<suffix>.
+    """
+    if stem.startswith('temp_'):
+        found = _find_json_in_model_subdirs(f'{stem}.json')
+        if found:
+            return os.path.dirname(found)
+        return os.path.join(MODELS_DIR, stem[5:])
+    return os.path.join(MODELS_DIR, stem)
+
+
 def model_json_path(stem):
-    return os.path.join(MODELS_DIR, f'{stem}.json')
+    return os.path.join(model_subdir_for_stem(stem), f'{stem}.json')
 
 
 def layout_json_path(stem):
-    return os.path.join(LAYOUTS_DIR, f'{stem}.json')
+    return os.path.join(model_subdir_for_stem(stem), f'layout_{stem}.json')
+
+
+def diagram_png_path(technical_name):
+    return os.path.join(MODELS_DIR, technical_name, f'{technical_name}.png')
+
+
+def model_csv_path(technical_name):
+    return os.path.join(MODELS_DIR, technical_name, f'{technical_name}.csv')
+
+
+def ensure_model_subdir_for_stem(stem):
+    d = model_subdir_for_stem(stem)
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 def _csv_optional_str(value):
@@ -223,6 +266,8 @@ def technical_name_from_post_create():
     tn = parse_technical_name_field(data)
     if tn in list_technical_names():
         raise ApiError('a model with this technical_name already exists', 409)
+    if os.path.isfile(model_json_path(working_stem(tn))):
+        raise ApiError('a working file already exists for this technical_name', 409)
     return tn
 
 
@@ -265,9 +310,9 @@ def api_create_model():
         raise ApiError(str(e), 400)
     try:
         wstem = working_stem(technical_name)
+        ensure_model_subdir_for_stem(wstem)
         model_path = model_json_path(wstem)
         layout_path = layout_json_path(wstem)
-        os.makedirs(LAYOUTS_DIR, exist_ok=True)
         with open(model_path, 'w', encoding='utf-8') as f:
             json.dump(model_doc, f, indent=4, ensure_ascii=False)
         with open(layout_path, 'w', encoding='utf-8') as f:
@@ -288,16 +333,29 @@ def technical_name_from_open_json():
 
 
 def _delete_canonical_model_files(stem):
-    """Remove canonical model + layout JSON for stem (validated). Best-effort."""
+    """Remove canonical model folder artifacts for stem (validated). Best-effort."""
     if not TECHNICAL_NAME_RE.fullmatch(stem):
         return
-    for path in (model_json_path(stem), layout_json_path(stem)):
+    subdir = os.path.join(MODELS_DIR, stem)
+    for basename in (
+        f'{stem}.json',
+        f'layout_{stem}.json',
+        f'{stem}.csv',
+        f'{stem}.png',
+    ):
+        path = os.path.join(subdir, basename)
         try:
             if os.path.isfile(path):
                 os.remove(path)
                 logger.info('Removed superseded file %s', path)
         except OSError as e:
             logger.warning('Could not remove %s: %s', path, e)
+    try:
+        if os.path.isdir(subdir) and not os.listdir(subdir):
+            os.rmdir(subdir)
+            logger.info('Removed empty model directory %s', subdir)
+    except OSError as e:
+        logger.warning('Could not remove directory %s: %s', subdir, e)
 
 
 @app.route('/api/rename_working_model', methods=['POST'])
@@ -326,22 +384,58 @@ def api_rename_working_model():
         return jsonify(
             {'success': False, 'error': 'a canonical model with this technical_name already exists'}
         ), 409
-    old_layout = layout_json_path(w_old)
-    new_layout = layout_json_path(w_new)
+    old_canon = model_json_path(old)
+    old_dir = os.path.join(MODELS_DIR, old)
+    new_dir = os.path.join(MODELS_DIR, new)
+    draft_only = not os.path.isfile(old_canon)
+    old_layout_canon = layout_json_path(w_old)
+    new_layout_canon = layout_json_path(w_new)
+
     try:
-        os.rename(old_model, new_model)
-    except OSError as e:
-        logger.error('rename_working_model model rename failed: %s', e)
-        return jsonify({'success': False, 'error': str(e)}), 500
-    try:
-        if os.path.isfile(old_layout):
-            os.rename(old_layout, new_layout)
-    except OSError as e:
-        logger.error('rename_working_model layout rename failed: %s', e)
+        if draft_only:
+            if os.path.isdir(new_dir):
+                return jsonify(
+                    {'success': False, 'error': 'a model folder already exists for that technical_name'}
+                ), 409
+            os.rename(old_dir, new_dir)
+            try:
+                os.rename(
+                    os.path.join(new_dir, f'{w_old}.json'),
+                    os.path.join(new_dir, f'{w_new}.json'),
+                )
+            except OSError:
+                os.rename(new_dir, old_dir)
+                raise
+        else:
+            os.rename(old_model, new_model)
+
         try:
-            os.rename(new_model, old_model)
-        except OSError as e2:
-            logger.error('rename_working_model rollback failed: %s', e2)
+            if draft_only:
+                lo_src = os.path.join(new_dir, f'layout_{w_old}.json')
+                lo_dst = os.path.join(new_dir, f'layout_{w_new}.json')
+                if os.path.isfile(lo_src):
+                    os.rename(lo_src, lo_dst)
+            else:
+                if os.path.isfile(old_layout_canon):
+                    os.rename(old_layout_canon, new_layout_canon)
+        except OSError:
+            if draft_only:
+                try:
+                    os.rename(
+                        os.path.join(new_dir, f'{w_new}.json'),
+                        os.path.join(new_dir, f'{w_old}.json'),
+                    )
+                    os.rename(new_dir, old_dir)
+                except OSError as e2:
+                    logger.error('rename_working_model rollback failed: %s', e2)
+            else:
+                try:
+                    os.rename(new_model, old_model)
+                except OSError as e2:
+                    logger.error('rename_working_model rollback failed: %s', e2)
+            raise
+    except OSError as e:
+        logger.error('rename_working_model failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
     logger.info('Renamed working model %s -> %s', old_model, new_model)
     return jsonify({'success': True, 'technical_name': new}), 200
@@ -351,9 +445,10 @@ def api_rename_working_model():
 def api_open_model():
     tn = technical_name_from_open_json()
     try:
+        os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
         src_model = model_json_path(tn)
         dst_model = model_json_path(working_stem(tn))
-        os.makedirs(LAYOUTS_DIR, exist_ok=True)
+        ensure_model_subdir_for_stem(working_stem(tn))
         shutil.copy2(src_model, dst_model)
         src_layout = layout_json_path(tn)
         dst_layout = layout_json_path(working_stem(tn))
@@ -408,11 +503,22 @@ def api_save_model():
         else:
             layout_doc = {'layout': []}
         jsonschema.validate(instance=layout_doc, schema=layout_schema)
-        os.makedirs(LAYOUTS_DIR, exist_ok=True)
+        old_subdir = os.path.normpath(model_subdir_for_stem(wstem))
+        new_subdir = os.path.normpath(os.path.join(MODELS_DIR, tn))
+        os.makedirs(new_subdir, exist_ok=True)
         with open(model_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(model_doc, f, indent=4, ensure_ascii=False)
         with open(layout_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(layout_doc, f, indent=4, ensure_ascii=False)
+        if old_subdir != new_subdir:
+            w_model = os.path.join(old_subdir, f'{wstem}.json')
+            w_layout = os.path.join(old_subdir, f'layout_{wstem}.json')
+            dst_w_model = os.path.join(new_subdir, f'{wstem}.json')
+            dst_w_layout = os.path.join(new_subdir, f'layout_{wstem}.json')
+            if os.path.isfile(w_model) and os.path.normpath(w_model) != os.path.normpath(dst_w_model):
+                shutil.move(w_model, dst_w_model)
+            if os.path.isfile(w_layout) and os.path.normpath(w_layout) != os.path.normpath(dst_w_layout):
+                shutil.move(w_layout, dst_w_layout)
         logger.info('Saved model %s from working copy %s', tn, wstem)
         if supersede_stem:
             _delete_canonical_model_files(supersede_stem)
@@ -523,6 +629,7 @@ def api_save_working_model():
         logger.error('save_working_model validation failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 400
     try:
+        ensure_model_subdir_for_stem(path_stem)
         with open(model_json_path(path_stem), 'w', encoding='utf-8') as f:
             json.dump(model_doc, f, indent=4, ensure_ascii=False)
         logger.info('Saved working model %s', model_json_path(path_stem))
@@ -554,9 +661,9 @@ def api_export_model_csv():
         parse_technical_name_value(tn, field='meta.technical_name')
     except ApiError as e:
         return jsonify({'success': False, 'error': e.message}), 400
-    os.makedirs(CSV_DIR, exist_ok=True)
-    out_path = os.path.join(CSV_DIR, f'{tn}.csv')
-    rel_path = f'data/models/csv/{tn}.csv'
+    os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
+    out_path = model_csv_path(tn)
+    rel_path = f'data/models/{tn}/{tn}.csv'
     try:
         with open(out_path, 'w', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
@@ -593,8 +700,8 @@ def api_save_diagram_png():
     wstem = working_stem(tn)
     if not os.path.isfile(model_json_path(wstem)) and tn not in list_technical_names():
         raise ApiError('unknown model', 404)
-    os.makedirs(DIAGRAMS_DIR, exist_ok=True)
-    out_path = os.path.join(DIAGRAMS_DIR, f'{tn}.png')
+    os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
+    out_path = diagram_png_path(tn)
     try:
         with open(out_path, 'wb') as f:
             f.write(png_bytes)
@@ -624,6 +731,7 @@ def save_layout(layout_to_save, stem):
         jsonschema.validate(instance=layout_to_save, schema=schema)
         logger.info('Layout schema validation success.')
         try:
+            ensure_model_subdir_for_stem(stem)
             file_path = layout_json_path(stem)
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(layout_to_save, f, indent=4, ensure_ascii=False)

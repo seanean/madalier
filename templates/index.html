@@ -530,7 +530,7 @@
                 placeholder="e.g. customer_warehouse"
                 pattern="[a-z][a-z0-9_]*" maxlength="200"
                 title="lower_snake_case: start with a letter; then letters, digits, underscores">
-            <p class="field-hint"><code>meta.name</code> is the label above; <code>meta.technical_name</code> is the id and file stem (<code>data/models/&lt;technical_name&gt;.json</code>). Edits use <code>temp_&lt;technical_name&gt;</code> until you save. After creation, changing the name in the Details panel derives a new technical name and renames working files if that id is valid and not already taken; otherwise you are prompted to adjust the name. Save to canonical replaces the old file when the stem changed.</p>
+            <p class="field-hint"><code>meta.name</code> is the label above; <code>meta.technical_name</code> is the id and folder name under <code>data/models/&lt;technical_name&gt;/</code> (<code>&lt;technical_name&gt;.json</code>, <code>layout_&lt;technical_name&gt;.json</code>, CSV/PNG alongside). Edits use <code>temp_&lt;technical_name&gt;</code> (and matching layout file) until you save. After creation, changing the name in the Details panel derives a new technical name and renames working files if that id is valid and not already taken; otherwise you are prompted to adjust the name. Save to canonical replaces the old file when the stem changed.</p>
             <label for="new-model-version">Version</label>
             <input type="text" id="new-model-version" name="version" required autocomplete="off" maxlength="100"
                 placeholder="1.0.0" value="1.0.0">

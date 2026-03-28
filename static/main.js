@@ -78,7 +78,7 @@ let layout = {};
 let positions = {};
 let nodes = [];
 let edges = [];
-/** Canonical meta.technical_name; files are &lt;technical_name&gt;.json and temp_&lt;technical_name&gt; while editing. */
+/** Canonical meta.technical_name; on disk under data/models/&lt;technical_name&gt;/ (&lt;technical_name&gt;.json, layout_*, temp_* while editing). */
 let canonicalTechnicalName = null;
 /** When true, diagram entity/attribute labels use technical_name instead of business_name. */
 let showTechnicalNamesInDiagram = false;
@@ -915,7 +915,7 @@ function schedulePersistWorkingModel() {
     }, 450);
 }
 
-/** Persists in-memory `model` to temp_<technical_name>.json. Returns whether the write succeeded. */
+/** Persists in-memory `model` to data/models/&lt;technical_name&gt;/temp_&lt;technical_name&gt;.json. Returns whether the write succeeded. */
 async function persistWorkingModel() {
     if (!canonicalTechnicalName) return true;
     if (!(model.meta?.name ?? '').trim()) {
@@ -2671,7 +2671,7 @@ async function exportDiagramPng() {
             alert(data.error || res.statusText || 'Could not save diagram PNG.');
             return;
         }
-        alert(`Diagram saved to data/models/diagrams/${canonicalTechnicalName}.png`);
+        alert(`Diagram saved to data/models/${canonicalTechnicalName}/${canonicalTechnicalName}.png`);
     } catch (e) {
         console.error(e);
         alert(e.message || 'Export failed.');
