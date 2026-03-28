@@ -2301,7 +2301,7 @@ function submitAddEntity(ev) {
     const technicalName = derivedEntityTechnicalNameForBusiness(businessName, undefined);
     const entityType = document.getElementById('add-entity-type')?.value ?? '';
     const definition = document.getElementById('add-entity-definition')?.value?.trim() ?? '';
-    if (!businessName || !definition) {
+    if (!businessName) {
         alert('Fill all required fields.');
         return;
     }
@@ -2374,7 +2374,7 @@ function submitAddAttribute(ev) {
     const technicalName = derivedAttributeTechnicalNameForBusiness(businessName, ent, undefined);
     const dataType = document.getElementById('add-attribute-data-type')?.value ?? '';
     const definition = document.getElementById('add-attribute-definition')?.value?.trim() ?? '';
-    if (!businessName || !definition || !dataType) {
+    if (!businessName || !dataType) {
         alert('Fill all required fields.');
         return;
     }

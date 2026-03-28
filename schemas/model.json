@@ -41,7 +41,6 @@
             "required": [
                 "name",
                 "technical_name",
-                "description",
                 "created",
                 "modified",
                 "version",
@@ -153,7 +152,6 @@
                                 "business_name",
                                 "technical_name",
                                 "data_type",
-                                "definition",
                                 "attribute_order"
                             ]
                         }
@@ -163,8 +161,7 @@
                     "entity_id",
                     "business_name",
                     "technical_name",
-                    "entity_type",
-                    "definition"
+                    "entity_type"
                 ]
             }
         },
