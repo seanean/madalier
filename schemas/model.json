@@ -99,6 +99,10 @@
                                     "description": "Technical name of an attribute, to be used in physical implementation, auto-generated via naming_conventions.json mappings.",
                                     "type": "string"
                                 },
+                                "mandatory" : {
+                                    "description": "Whether the attribute is mandatory or not.",
+                                    "type": "boolean"
+                                },
                                 "data_type": {
                                     "description": "Data type of the attribute, options: [STRING, TEXT, INTEGER, BIGINT, SMALLINT, DECIMAL, FLOAT, BOOLEAN, DATE, TIMESTAMP, BINARY]",
                                     "type": "string",

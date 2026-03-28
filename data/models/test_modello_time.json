@@ -9,6 +9,7 @@
                     "data_type": "STRING",
                     "definition": "sample string",
                     "key_type": null,
+                    "mandatory": true,
                     "source_mapping": "something.there",
                     "technical_name": "col_one"
                 },
@@ -19,6 +20,7 @@
                     "data_type": "DECIMAL",
                     "definition": "sample string",
                     "key_type": null,
+                    "mandatory": true,
                     "precision": 20,
                     "scale": 11,
                     "source_mapping": "something.here",
@@ -40,6 +42,7 @@
                     "data_type": "BIGINT",
                     "definition": "sample string",
                     "key_type": null,
+                    "mandatory": true,
                     "source_mapping": "something.there",
                     "technical_name": "col_one"
                 },
@@ -50,6 +53,7 @@
                     "data_type": "DECIMAL",
                     "definition": "sample string",
                     "key_type": null,
+                    "mandatory": true,
                     "precision": 1,
                     "scale": 1,
                     "source_mapping": "something.here",
@@ -71,6 +75,7 @@
                     "data_type": "STRING",
                     "definition": "bhjnkm",
                     "key_type": null,
+                    "mandatory": true,
                     "technical_name": "hnjkm"
                 },
                 {
@@ -80,6 +85,7 @@
                     "data_type": "STRING",
                     "definition": "nnnnnnnnnnn",
                     "key_type": null,
+                    "mandatory": true,
                     "technical_name": "nbbbbbbbb"
                 }
             ],
@@ -94,9 +100,9 @@
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-28T17:40:01.890669Z",
-        "name": "MODEL AGAINNNN",
-        "technical_name": "model_againnnn",
+        "modified": "2026-03-28T17:43:31.067287Z",
+        "name": "test modello time",
+        "technical_name": "test_modello_time",
         "version": "1.0.0"
     },
     "relationships": [

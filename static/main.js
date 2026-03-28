@@ -1206,6 +1206,19 @@ function renderAttributeDetails(attr) {
     });
     appendDetailsFormField(form, 'key_type', selKey);
 
+    const cbMandatory = document.createElement('input');
+    cbMandatory.type = 'checkbox';
+    cbMandatory.checked = attr.mandatory === true;
+    cbMandatory.addEventListener('change', () => {
+        if (cbMandatory.checked) {
+            attr.mandatory = true;
+        } else {
+            delete attr.mandatory;
+        }
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'mandatory', cbMandatory);
+
     const attrsSorted = entForAttr ? sortedEntityAttributes(entForAttr) : [];
     const orderIdx = attrsSorted.findIndex((a) => a.attribute_id === attr.attribute_id);
 
@@ -2257,6 +2270,7 @@ function submitAddAttribute(ev) {
     const technicalName = derivedAttributeTechnicalNameForBusiness(businessName, ent, undefined);
     const dataType = document.getElementById('add-attribute-data-type')?.value ?? '';
     const definition = document.getElementById('add-attribute-definition')?.value?.trim() ?? '';
+    const mandatory = document.getElementById('add-attribute-mandatory')?.checked === true;
     if (!businessName || !dataType) {
         alert('Fill all required fields.');
         return;
@@ -2284,6 +2298,7 @@ function submitAddAttribute(ev) {
         attribute_order: maxOrder + 1,
         key_type: null,
     };
+    if (mandatory) newAttr.mandatory = true;
     if (!ent.attributes) ent.attributes = [];
     ent.attributes.push(newAttr);
 
