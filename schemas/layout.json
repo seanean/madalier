@@ -13,8 +13,9 @@
                 "type": "object",
                 "properties": {
                     "entity_id": {
-                        "description": "Universal unique identifier of the entity, referring to the relevant entity_id from the data model.",
-                        "type": "string"
+                        "description": "Entity UUID from the data model (RFC 4122 string form).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "x_coord": {
                         "description": "X coordinate of where the entity is located visually.",

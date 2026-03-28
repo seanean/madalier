@@ -56,8 +56,9 @@
                 "type": "object",
                 "properties": {
                     "entity_id": {
-                        "description": "Universal unique identifier for an individual entity.",
-                        "type": "string"
+                        "description": "UUID for the entity (RFC 4122 string form).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "business_name": {
                         "description": "Business name of an entity.",
@@ -87,8 +88,9 @@
                             "type": "object",
                             "properties": {
                                 "attribute_id": {
-                                    "description": "Universal unique identifier for an individual attribute, unique across all entities.",
-                                    "type": "string"
+                                    "description": "UUID for the attribute, unique across all entities (RFC 4122 string form).",
+                                    "type": "string",
+                                    "format": "uuid"
                                 },
                                 "business_name": {
                                     "description": "Business name of an attribute.",
@@ -174,28 +176,33 @@
                 "type": "object",
                 "properties": {
                     "relationship_id": {
-                        "description": "Universal unique identifier for individual relationship in the model.",
-                        "type": "string"
+                        "description": "UUID for the relationship (RFC 4122 string form).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "relationship_name": {
                         "description": "Name of the relationship, in format of 'parent_entity.parent_attribute 1:M child_entity.childattribute'",
                         "type": "string"
                     },
                     "parent_entity_id": {
-                        "description": "Universal unique identifier of the parent entity in the relationship (taken from the entity_id).",
-                        "type": "string"
+                        "description": "Parent entity UUID (matches an entity_id).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "parent_attribute_id": {
-                        "description": "Universal unique identifier of the parent attribute in the relationship (taken from the attribute_id).",
-                        "type": "string"
+                        "description": "Parent attribute UUID (matches an attribute_id).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "child_entity_id": {
-                        "description": "Universal unique identifier of the child entity in the relationship (taken from the entity_id).",
-                        "type": "string"
+                        "description": "Child entity UUID (matches an entity_id).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "child_attribute_id": {
-                        "description": "Universal unique identifier of the child attribute in the relationship (taken from the attribute_id).",
-                        "type": "string"
+                        "description": "Child attribute UUID (matches an attribute_id).",
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "parent_mandatory": {
                         "description": "Whether the parent is mandatory in the relationship or not.",

@@ -325,6 +325,18 @@
             color: #333;
         }
 
+        .new-model-dialog label.checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .new-model-dialog label.checkbox-row input[type="checkbox"] {
+            width: auto;
+            margin-bottom: 0;
+        }
+
         .new-model-dialog input,
         .new-model-dialog textarea,
         .new-model-dialog select {
@@ -374,7 +386,7 @@
         <button type="button" id="save-model-btn">Save model</button>
         <button type="button" id="add-entity-btn">Add entity</button>
         <button type="button" id="add-attribute-btn" disabled>Add attribute</button>
-        <button type="button">Add relationship</button>
+        <button type="button" id="add-relationship-btn" disabled>Add relationship</button>
         <button type="button">Remove selected</button>
         <button type="button">Export diagram</button>
         <button type="button">Export DDL</button>
@@ -474,6 +486,40 @@
             <footer>
                 <button type="button" id="add-attribute-cancel">Cancel</button>
                 <button type="submit" id="add-attribute-submit">Add</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <dialog id="add-relationship-dialog" class="new-model-dialog" aria-labelledby="add-relationship-dialog-title">
+        <header id="add-relationship-dialog-title">Add relationship</header>
+        <form class="dialog-body" id="add-relationship-form">
+            <label for="add-relationship-parent-entity">Parent entity</label>
+            <select id="add-relationship-parent-entity" name="parent_entity_id" required></select>
+            <label for="add-relationship-parent-attribute">Parent attribute</label>
+            <select id="add-relationship-parent-attribute" name="parent_attribute_id" required></select>
+            <label for="add-relationship-child-entity">Child entity</label>
+            <select id="add-relationship-child-entity" name="child_entity_id" required></select>
+            <label for="add-relationship-child-attribute">Child attribute</label>
+            <select id="add-relationship-child-attribute" name="child_attribute_id" required></select>
+            <label for="add-relationship-parent-cardinality">Parent cardinality</label>
+            <select id="add-relationship-parent-cardinality" name="parent_cardinality" required>
+                <option value="One" selected>One</option>
+                <option value="Many">Many</option>
+            </select>
+            <label for="add-relationship-child-cardinality">Child cardinality</label>
+            <select id="add-relationship-child-cardinality" name="child_cardinality" required>
+                <option value="One" selected>One</option>
+                <option value="Many">Many</option>
+            </select>
+            <label class="checkbox-row"><input type="checkbox" id="add-relationship-parent-mandatory" name="parent_mandatory" checked> Parent mandatory</label>
+            <label class="checkbox-row"><input type="checkbox" id="add-relationship-child-mandatory" name="child_mandatory" checked> Child mandatory</label>
+            <label for="add-relationship-preview-cardinality">Cardinality (derived)</label>
+            <input type="text" id="add-relationship-preview-cardinality" readonly autocomplete="off" aria-readonly="true">
+            <label for="add-relationship-preview-name">Relationship name (derived)</label>
+            <input type="text" id="add-relationship-preview-name" readonly autocomplete="off" aria-readonly="true">
+            <footer>
+                <button type="button" id="add-relationship-cancel">Cancel</button>
+                <button type="submit" id="add-relationship-submit">Add</button>
             </footer>
         </form>
     </dialog>

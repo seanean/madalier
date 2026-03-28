@@ -474,6 +474,7 @@ async function loadWorkingCopyAndRender(technicalName) {
     console.log('Edges created:', edges.length);
     selectedEntityId = null;
     syncAddAttributeButtonState();
+    syncAddRelationshipButtonState();
     preservedCyViewport = null;
     fitCyViewportAfterNextRender = false;
     if (cy) {
@@ -576,6 +577,19 @@ function findRelationshipById(id) {
 function syncAddAttributeButtonState() {
     const btn = document.getElementById('add-attribute-btn');
     if (btn) btn.disabled = !selectedEntityId || !canonicalTechnicalName;
+}
+
+function countModelAttributes() {
+    let n = 0;
+    for (const ent of model.entities || []) {
+        n += (ent.attributes || []).length;
+    }
+    return n;
+}
+
+function syncAddRelationshipButtonState() {
+    const btn = document.getElementById('add-relationship-btn');
+    if (btn) btn.disabled = !canonicalTechnicalName || countModelAttributes() < 2;
 }
 
 /** True when every entity in `model` has `{ x, y }` in `positions` (used to place nodes without dagre). */
@@ -1060,6 +1074,17 @@ function deriveRelationshipCardinality(rel) {
     rel.cardinality = `${p}:${c}`;
 }
 
+/** Sets rel.relationship_name from technical names and derived cardinality; no-op if entities/attributes are missing. */
+function syncRelationshipName(rel) {
+    deriveRelationshipCardinality(rel);
+    const pEnt = findEntityById(rel.parent_entity_id);
+    const cEnt = findEntityById(rel.child_entity_id);
+    const pAttr = findAttributeById(rel.parent_attribute_id);
+    const cAttr = findAttributeById(rel.child_attribute_id);
+    if (!pEnt || !cEnt || !pAttr || !cAttr) return;
+    rel.relationship_name = `${pEnt.technical_name}.${pAttr.technical_name} ${rel.cardinality} ${cEnt.technical_name}.${cAttr.technical_name}`;
+}
+
 function renderRelationshipDetails(rel) {
     const shell = beginDetailsPane('Relationship');
     if (!shell) return;
@@ -1071,6 +1096,7 @@ function renderRelationshipDetails(rel) {
         cb.checked = checked === true;
         cb.addEventListener('change', () => {
             onChange(cb.checked);
+            syncRelationshipName(rel);
             patchRelationshipEdgeData(rel);
             schedulePersistWorkingModel();
         });
@@ -1082,7 +1108,7 @@ function renderRelationshipDetails(rel) {
         fillDetailsEnumSelect(sel, SCHEMA_SIDE_CARDINALITY, current);
         sel.addEventListener('change', () => {
             setField(sel.value);
-            deriveRelationshipCardinality(rel);
+            syncRelationshipName(rel);
             cardinalityValueEl.textContent = rel.cardinality;
             patchRelationshipEdgeData(rel);
             schedulePersistWorkingModel();
@@ -1091,8 +1117,9 @@ function renderRelationshipDetails(rel) {
     }
 
     const prevCardinality = rel.cardinality;
-    deriveRelationshipCardinality(rel);
-    if (prevCardinality !== rel.cardinality) {
+    const prevName = rel.relationship_name ?? '';
+    syncRelationshipName(rel);
+    if (prevCardinality !== rel.cardinality || prevName !== (rel.relationship_name ?? '')) {
         patchRelationshipEdgeData(rel);
         schedulePersistWorkingModel();
     }
@@ -1445,6 +1472,7 @@ function renderCy() {
         if (evt.target === cy) {
             selectedEntityId = null;
             syncAddAttributeButtonState();
+            syncAddRelationshipButtonState();
             clearDetailsPane();
         }
     });
@@ -1454,6 +1482,7 @@ function renderCy() {
         if (nodeType === 'entity') {
             selectedEntityId = evt.target.id();
             syncAddAttributeButtonState();
+            syncAddRelationshipButtonState();
             const ent = findEntityById(evt.target.id());
             if (ent) renderEntityDetails(ent);
             else renderDetailsError('Entity not found in model.');
@@ -1461,6 +1490,7 @@ function renderCy() {
             const parentId = evt.target.data('parent');
             selectedEntityId = parentId;
             syncAddAttributeButtonState();
+            syncAddRelationshipButtonState();
             const ent = findEntityById(parentId);
             if (ent) renderEntityDetails(ent);
             else renderDetailsError('Entity not found in model.');
@@ -1791,6 +1821,7 @@ function submitAddEntity(ev) {
     renderCy();
     selectedEntityId = entity_id;
     syncAddAttributeButtonState();
+    syncAddRelationshipButtonState();
     renderEntityDetails(newEnt);
     schedulePersistWorkingModel();
     saveLayout();
@@ -1866,8 +1897,190 @@ function submitAddAttribute(ev) {
     renderCy();
     syncEntityAttributeOrderInCy(ent.entity_id);
     renderAttributeDetails(newAttr);
+    syncAddRelationshipButtonState();
     schedulePersistWorkingModel();
     saveLayout();
+}
+
+function fillEntitySelectForRelationship(selectEl) {
+    if (!selectEl) return;
+    selectEl.replaceChildren();
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'Select entity';
+    ph.disabled = true;
+    ph.selected = true;
+    selectEl.appendChild(ph);
+    for (const ent of model.entities || []) {
+        const opt = document.createElement('option');
+        opt.value = ent.entity_id;
+        opt.textContent = ent.business_name ?? ent.technical_name ?? ent.entity_id;
+        selectEl.appendChild(opt);
+    }
+}
+
+function fillAttributeSelectForRelationship(selectEl, entityId, placeholderNoEntity) {
+    if (!selectEl) return;
+    selectEl.replaceChildren();
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = entityId ? 'Select attribute' : placeholderNoEntity;
+    ph.disabled = true;
+    ph.selected = true;
+    selectEl.appendChild(ph);
+    const ent = findEntityById(entityId);
+    if (!ent) return;
+    for (const attr of ent.attributes || []) {
+        const opt = document.createElement('option');
+        opt.value = attr.attribute_id;
+        opt.textContent = attr.business_name ?? attr.technical_name ?? attr.attribute_id;
+        selectEl.appendChild(opt);
+    }
+}
+
+function updateAddRelationshipPreview() {
+    const cardEl = document.getElementById('add-relationship-preview-cardinality');
+    const nameEl = document.getElementById('add-relationship-preview-name');
+    const pe = document.getElementById('add-relationship-parent-entity')?.value ?? '';
+    const pa = document.getElementById('add-relationship-parent-attribute')?.value ?? '';
+    const ce = document.getElementById('add-relationship-child-entity')?.value ?? '';
+    const ca = document.getElementById('add-relationship-child-attribute')?.value ?? '';
+    const pc = document.getElementById('add-relationship-parent-cardinality')?.value ?? 'One';
+    const cc = document.getElementById('add-relationship-child-cardinality')?.value ?? 'One';
+    if (!cardEl || !nameEl) return;
+    if (!pe || !pa || !ce || !ca) {
+        cardEl.value = '';
+        nameEl.value = '';
+        return;
+    }
+    const scratch = {
+        parent_entity_id: pe,
+        parent_attribute_id: pa,
+        child_entity_id: ce,
+        child_attribute_id: ca,
+        parent_cardinality: pc,
+        child_cardinality: cc,
+    };
+    deriveRelationshipCardinality(scratch);
+    const pEnt = findEntityById(pe);
+    const cEnt = findEntityById(ce);
+    const pAttr = findAttributeById(pa);
+    const cAttr = findAttributeById(ca);
+    cardEl.value = scratch.cardinality ?? '';
+    if (!pEnt || !cEnt || !pAttr || !cAttr) {
+        nameEl.value = '';
+        return;
+    }
+    nameEl.value = `${pEnt.technical_name}.${pAttr.technical_name} ${scratch.cardinality} ${cEnt.technical_name}.${cAttr.technical_name}`;
+}
+
+function resetAddRelationshipForm() {
+    document.getElementById('add-relationship-form')?.reset();
+}
+
+function openAddRelationshipDialog() {
+    if (!canonicalTechnicalName) {
+        alert('Open or create a model first.');
+        return;
+    }
+    if (countModelAttributes() < 2) {
+        alert('Add at least two attributes (across entities) before creating a relationship.');
+        return;
+    }
+    resetAddRelationshipForm();
+    fillEntitySelectForRelationship(document.getElementById('add-relationship-parent-entity'));
+    fillEntitySelectForRelationship(document.getElementById('add-relationship-child-entity'));
+    fillAttributeSelectForRelationship(
+        document.getElementById('add-relationship-parent-attribute'),
+        '',
+        'Select parent entity first',
+    );
+    fillAttributeSelectForRelationship(
+        document.getElementById('add-relationship-child-attribute'),
+        '',
+        'Select child entity first',
+    );
+    updateAddRelationshipPreview();
+    document.getElementById('add-relationship-dialog')?.showModal();
+    queueMicrotask(() => document.getElementById('add-relationship-parent-entity')?.focus());
+}
+
+function submitAddRelationship(ev) {
+    ev.preventDefault();
+    if (!canonicalTechnicalName) return;
+    const parent_entity_id = document.getElementById('add-relationship-parent-entity')?.value ?? '';
+    const parent_attribute_id = document.getElementById('add-relationship-parent-attribute')?.value ?? '';
+    const child_entity_id = document.getElementById('add-relationship-child-entity')?.value ?? '';
+    const child_attribute_id = document.getElementById('add-relationship-child-attribute')?.value ?? '';
+    const parent_cardinality = document.getElementById('add-relationship-parent-cardinality')?.value ?? '';
+    const child_cardinality = document.getElementById('add-relationship-child-cardinality')?.value ?? '';
+    const parent_mandatory = document.getElementById('add-relationship-parent-mandatory')?.checked === true;
+    const child_mandatory = document.getElementById('add-relationship-child-mandatory')?.checked === true;
+    if (!parent_entity_id || !parent_attribute_id || !child_entity_id || !child_attribute_id) {
+        alert('Select parent and child entities and attributes.');
+        return;
+    }
+    if (!SCHEMA_SIDE_CARDINALITY.includes(parent_cardinality) || !SCHEMA_SIDE_CARDINALITY.includes(child_cardinality)) {
+        alert('Invalid cardinality.');
+        return;
+    }
+    if (findEntityContainingAttribute(parent_attribute_id)?.entity_id !== parent_entity_id) {
+        alert('Parent attribute does not belong to the parent entity.');
+        return;
+    }
+    if (findEntityContainingAttribute(child_attribute_id)?.entity_id !== child_entity_id) {
+        alert('Child attribute does not belong to the child entity.');
+        return;
+    }
+    const rels = model.relationships || [];
+    if (rels.some((r) => r.parent_attribute_id === parent_attribute_id && r.child_attribute_id === child_attribute_id)) {
+        alert('A relationship between these attributes already exists.');
+        return;
+    }
+    const newRel = {
+        relationship_id: crypto.randomUUID(),
+        parent_entity_id,
+        parent_attribute_id,
+        child_entity_id,
+        child_attribute_id,
+        parent_mandatory,
+        child_mandatory,
+        parent_cardinality,
+        child_cardinality,
+    };
+    syncRelationshipName(newRel);
+    if (!model.relationships) model.relationships = [];
+    model.relationships.push(newRel);
+
+    document.getElementById('add-relationship-dialog')?.close();
+    modelToNodesEdges();
+    renderCy();
+    renderRelationshipDetails(newRel);
+    schedulePersistWorkingModel();
+    saveLayout();
+}
+
+function wireAddRelationshipDialogControls() {
+    const pe = document.getElementById('add-relationship-parent-entity');
+    const pa = document.getElementById('add-relationship-parent-attribute');
+    const ce = document.getElementById('add-relationship-child-entity');
+    const ca = document.getElementById('add-relationship-child-attribute');
+    pe?.addEventListener('change', () => {
+        fillAttributeSelectForRelationship(pa, pe.value, 'Select parent entity first');
+        updateAddRelationshipPreview();
+    });
+    ce?.addEventListener('change', () => {
+        fillAttributeSelectForRelationship(ca, ce.value, 'Select child entity first');
+        updateAddRelationshipPreview();
+    });
+    for (const id of [
+        'add-relationship-parent-attribute',
+        'add-relationship-child-attribute',
+        'add-relationship-parent-cardinality',
+        'add-relationship-child-cardinality',
+    ]) {
+        document.getElementById(id)?.addEventListener('change', updateAddRelationshipPreview);
+    }
 }
 
 function resetNewModelForm() {
@@ -2006,8 +2219,11 @@ async function saveCanonicalModel() {
 document.getElementById('save-model-btn')?.addEventListener('click', () => saveCanonicalModel());
 
 initAddAttributeDataTypeSelect();
+syncAddRelationshipButtonState();
+wireAddRelationshipDialogControls();
 document.getElementById('add-entity-btn')?.addEventListener('click', () => openAddEntityDialog());
 document.getElementById('add-attribute-btn')?.addEventListener('click', () => openAddAttributeDialog());
+document.getElementById('add-relationship-btn')?.addEventListener('click', () => openAddRelationshipDialog());
 document.getElementById('add-entity-form')?.addEventListener('submit', (ev) => submitAddEntity(ev));
 document.getElementById('add-entity-cancel')?.addEventListener('click', () => {
     document.getElementById('add-entity-dialog')?.close();
@@ -2015,6 +2231,10 @@ document.getElementById('add-entity-cancel')?.addEventListener('click', () => {
 document.getElementById('add-attribute-form')?.addEventListener('submit', (ev) => submitAddAttribute(ev));
 document.getElementById('add-attribute-cancel')?.addEventListener('click', () => {
     document.getElementById('add-attribute-dialog')?.close();
+});
+document.getElementById('add-relationship-form')?.addEventListener('submit', (ev) => submitAddRelationship(ev));
+document.getElementById('add-relationship-cancel')?.addEventListener('click', () => {
+    document.getElementById('add-relationship-dialog')?.close();
 });
 
 void loadNamingConfig();
