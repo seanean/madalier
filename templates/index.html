@@ -9,15 +9,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
+        html {
+            height: 100%;
+        }
+
         body {
             margin: 0;
+            height: 100%;
+            max-height: 100%;
+            overflow: hidden;
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
             font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', monospace;
         }
 
         .app-header {
+            flex-shrink: 0;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
@@ -28,31 +35,35 @@
         }
 
         .app-header button {
-            padding: 0.35rem 0.65rem;
+            padding: 0.3rem 0.55rem;
             font: inherit;
+            font-size: 0.75rem;
             cursor: pointer;
         }
 
         .app-main {
             flex: 1;
-            display: flex;
-            flex-direction: column;
             min-height: 0;
             min-width: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .app-workspace {
             flex: 1;
-            display: flex;
-            flex-direction: row;
             min-height: 0;
             min-width: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: row;
         }
 
         .diagram-panel {
             flex: 1;
             min-width: 0;
             min-height: 0;
+            overflow: hidden;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -153,29 +164,38 @@
             width: 300px;
             min-width: 120px;
             max-width: min(80vw, 900px);
-            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
             background: #fafafa;
             border-left: 1px solid #ccc;
             padding: 0.75rem;
             box-sizing: border-box;
         }
 
+        .details-pane #details-content {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
+
         .details-pane h2 {
             margin: 0 0 0.5rem;
-            font-size: 1rem;
+            font-size: 0.875rem;
             font-weight: 600;
         }
 
         .details-pane h3 {
             margin: 0 0 0.5rem;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             font-weight: 600;
             color: #333;
         }
 
         .details-pane h4.details-subheading {
             margin: 0.75rem 0 0.35rem;
-            font-size: 0.8rem;
+            font-size: 0.72rem;
             font-weight: 600;
             color: #555;
         }
@@ -193,14 +213,14 @@
 
         .details-placeholder {
             margin: 0;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             color: #666;
             line-height: 1.4;
         }
 
         .details-error {
             margin: 0;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             color: #a30;
         }
 
@@ -210,7 +230,7 @@
 
         .details-props dt {
             margin: 0.5rem 0 0.15rem;
-            font-size: 0.75rem;
+            font-size: 0.68rem;
             font-weight: 600;
             color: #555;
             text-transform: none;
@@ -222,7 +242,7 @@
 
         .details-props dd {
             margin: 0;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             word-break: break-word;
             overflow-wrap: anywhere;
         }
@@ -230,7 +250,7 @@
         .details-props pre {
             margin: 0.25rem 0 0;
             padding: 0.4rem 0.5rem;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             line-height: 1.35;
             background: #fff;
             border: 1px solid #e0e0e0;
@@ -240,7 +260,7 @@
         }
 
         .details-persist-message {
-            font-size: 0.8rem;
+            font-size: 0.72rem;
             margin: 0 0 0.5rem;
             padding: 0.4rem 0.5rem;
             border-radius: 4px;
@@ -261,7 +281,7 @@
 
         .details-field-label {
             display: block;
-            font-size: 0.75rem;
+            font-size: 0.68rem;
             font-weight: 600;
             color: #555;
             margin-bottom: 0.2rem;
@@ -270,8 +290,9 @@
         .details-field-control {
             width: 100%;
             box-sizing: border-box;
-            font: inherit;
-            padding: 0.35rem 0.45rem;
+            font-family: inherit;
+            font-size: 0.75rem;
+            padding: 0.3rem 0.4rem;
             border: 1px solid #ccc;
             border-radius: 4px;
         }
@@ -299,13 +320,14 @@
         }
 
         .details-order-value {
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             min-width: 1.5rem;
         }
 
         .details-order-btn {
             padding: 0.2rem 0.45rem;
             font: inherit;
+            font-size: 0.72rem;
             line-height: 1;
             cursor: pointer;
             border: 1px solid #ccc;
