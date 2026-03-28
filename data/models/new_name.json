@@ -50,10 +50,10 @@
                     "data_type": "DECIMAL",
                     "definition": "sample string",
                     "key_type": null,
-                    "source_mapping": "something.here",
-                    "technical_name": "col_x",
                     "precision": 1,
-                    "scale": 1
+                    "scale": 1,
+                    "source_mapping": "something.here",
+                    "technical_name": "col_x"
                 }
             ],
             "business_name": "Entity Name 23",
@@ -65,12 +65,12 @@
     ],
     "meta": {
         "created": "2026-03-26T20:49:25.004Z",
+        "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-27T17:22:18.209191Z",
-        "name": "Test",
-        "technical_name": "test",
-        "version": "1.0.0",
-        "created_by": "John Doe"
+        "modified": "2026-03-28T05:48:40.750773Z",
+        "name": "new name",
+        "technical_name": "new_name",
+        "version": "1.0.0"
     },
     "relationships": [
         {

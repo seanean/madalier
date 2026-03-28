@@ -35,17 +35,23 @@ def handle_api_error(e):
     return jsonify({'error': e.message}), e.status_code
 
 
+def parse_technical_name_value(raw, field='technical_name'):
+    """Enforce TECHNICAL_NAME_RE on a string. Raises ApiError on failure."""
+    if not isinstance(raw, str):
+        raise ApiError(f'missing or invalid {field}')
+    tn = raw.strip()
+    if not tn:
+        raise ApiError(f'missing or invalid {field}')
+    if not TECHNICAL_NAME_RE.fullmatch(tn):
+        raise ApiError(f'invalid {field}')
+    return tn
+
+
 def parse_technical_name_field(data):
     """Extract technical_name from a JSON object and enforce format. Raises ApiError on failure."""
     if not isinstance(data, dict):
         raise ApiError('expected JSON object')
-    raw = data.get('technical_name')
-    if not isinstance(raw, str) or not raw.strip():
-        raise ApiError('missing or invalid technical_name')
-    tn = raw.strip()
-    if not TECHNICAL_NAME_RE.fullmatch(tn):
-        raise ApiError('invalid technical_name')
-    return tn
+    return parse_technical_name_value(data.get('technical_name'))
 
 
 def path_stem_from_envelope(data, *, require_working=False):
@@ -181,13 +187,64 @@ def technical_name_from_open_json():
     return tn
 
 
-def technical_name_from_save_model_json():
+def _delete_canonical_model_files(stem):
+    """Remove canonical model + layout JSON for stem (validated). Best-effort."""
+    if not TECHNICAL_NAME_RE.fullmatch(stem):
+        return
+    for path in (model_json_path(stem), layout_json_path(stem)):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+                logger.info('Removed superseded file %s', path)
+        except OSError as e:
+            logger.warning('Could not remove %s: %s', path, e)
+
+
+@app.route('/api/rename_working_model', methods=['POST'])
+def api_rename_working_model():
     data = request.get_json(silent=True)
-    tn = parse_technical_name_field(data)
-    wstem = working_stem(tn)
-    if not os.path.isfile(model_json_path(wstem)):
-        raise ApiError('no working copy; open or create the model first', 400)
-    return tn
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': 'expected JSON object'}), 400
+    try:
+        old = parse_technical_name_value(data.get('from_technical_name'), 'from_technical_name')
+        new = parse_technical_name_value(data.get('to_technical_name'), 'to_technical_name')
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), 400
+    if old == new:
+        return jsonify({'success': True, 'technical_name': new}), 200
+    w_old = working_stem(old)
+    w_new = working_stem(new)
+    old_model = model_json_path(w_old)
+    new_model = model_json_path(w_new)
+    if not os.path.isfile(old_model):
+        return jsonify({'success': False, 'error': 'working model not found'}), 404
+    if os.path.isfile(new_model):
+        return jsonify(
+            {'success': False, 'error': 'a working file already exists for that technical_name'}
+        ), 409
+    if new in list_technical_names():
+        return jsonify(
+            {'success': False, 'error': 'a canonical model with this technical_name already exists'}
+        ), 409
+    old_layout = layout_json_path(w_old)
+    new_layout = layout_json_path(w_new)
+    try:
+        os.rename(old_model, new_model)
+    except OSError as e:
+        logger.error('rename_working_model model rename failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    try:
+        if os.path.isfile(old_layout):
+            os.rename(old_layout, new_layout)
+    except OSError as e:
+        logger.error('rename_working_model layout rename failed: %s', e)
+        try:
+            os.rename(new_model, old_model)
+        except OSError as e2:
+            logger.error('rename_working_model rollback failed: %s', e2)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    logger.info('Renamed working model %s -> %s', old_model, new_model)
+    return jsonify({'success': True, 'technical_name': new}), 200
 
 
 @app.route('/api/open_model', methods=['POST'])
@@ -214,8 +271,25 @@ def api_open_model():
 
 @app.route('/api/save_model', methods=['POST'])
 def api_save_model():
-    tn = technical_name_from_save_model_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': 'expected JSON object'}), 400
+    try:
+        tn = parse_technical_name_field(data)
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), 400
     wstem = working_stem(tn)
+    if not os.path.isfile(model_json_path(wstem)):
+        return jsonify({'success': False, 'error': 'no working copy; open or create the model first'}), 400
+    supersede_stem = None
+    raw_sup = data.get('supersede_technical_name')
+    if raw_sup is not None and str(raw_sup).strip() != '':
+        try:
+            supersede_stem = parse_technical_name_value(raw_sup, 'supersede_technical_name')
+        except ApiError as e:
+            return jsonify({'success': False, 'error': e.message}), 400
+        if supersede_stem == tn:
+            supersede_stem = None
     try:
         with open('schemas/model.json') as f:
             model_schema = json.load(f)
@@ -240,6 +314,8 @@ def api_save_model():
         with open(layout_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(layout_doc, f, indent=4, ensure_ascii=False)
         logger.info('Saved model %s from working copy %s', tn, wstem)
+        if supersede_stem:
+            _delete_canonical_model_files(supersede_stem)
         return jsonify({'success': True, 'technical_name': tn}), 200
     except jsonschema.ValidationError as e:
         logger.error('save_model validation failed: %s', e)

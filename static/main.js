@@ -24,8 +24,109 @@ const SCHEMA_KEY_TYPES = ['PRIMARY', 'FOREIGN', 'NATURAL'];
 /** schemas/model.json parent_cardinality / child_cardinality.enum */
 const SCHEMA_SIDE_CARDINALITY = ['One', 'Many'];
 
+/** Must match TECHNICAL_NAME_RE in app.py (UX + displayNameToTechnicalName). */
+const TECHNICAL_NAME_RE = /^[a-z][a-z0-9_]*$/;
+
 let persistModelTimer = null;
 let detailsPersistErrorText = null;
+/** Debounced rename when meta.name implies a new technical_name. */
+let metaRenameTimer = null;
+let pendingDerivedTechnical = null;
+/** Canonical stem when the working copy was loaded (for superseding old files on Save). */
+let openedAsTechnicalName = null;
+/** Live metadata technical field (for post-rename DOM sync). */
+let metadataTechnicalInputEl = null;
+
+/** Letters, numbers, spaces, and underscores only (Unicode letters and numbers). */
+function sanitizeMetaModelName(raw) {
+    return String(raw ?? '').replace(/[^\p{L}\p{N}_ ]/gu, '');
+}
+
+/** Strips disallowed characters and keeps the caret in a sensible position. */
+function applyMetaModelNameSanitizeToInput(el) {
+    const raw = el.value;
+    const caret = el.selectionStart ?? raw.length;
+    const cleaned = sanitizeMetaModelName(raw);
+    if (cleaned !== raw) {
+        const before = raw.slice(0, Math.min(caret, raw.length));
+        const newCaret = sanitizeMetaModelName(before).length;
+        el.value = cleaned;
+        el.setSelectionRange(newCaret, newCaret);
+    }
+    return el.value;
+}
+
+function displayNameToTechnicalName(displayName) {
+    let s = String(displayName ?? '').trim().toLowerCase();
+    try {
+        s = s.normalize('NFKD').replace(/\p{M}+/gu, '');
+    } catch {
+        /* ignore if unsupported */
+    }
+    s = s.replace(/[^a-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (!s) return 'model';
+    if (!/^[a-z]/.test(s)) s = `m_${s}`;
+    s = s.replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (!s) return 'model';
+    if (!/^[a-z]/.test(s)) s = `m_${s}`;
+    if (!TECHNICAL_NAME_RE.test(s)) return 'model';
+    return s;
+}
+
+async function renameWorkingToTechnicalName(fromTn, desiredTn) {
+    const base = desiredTn;
+    for (let suffix = 0; suffix < 50; suffix++) {
+        const candidate = suffix === 0 ? base : `${base}_${suffix + 1}`;
+        if (!TECHNICAL_NAME_RE.test(candidate)) continue;
+        const res = await fetch('/api/rename_working_model', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                from_technical_name: fromTn,
+                to_technical_name: candidate,
+            }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+            return { ok: true, technical_name: data.technical_name ?? candidate };
+        }
+        if (res.status === 409) continue;
+        return { ok: false, error: data.error || res.statusText || 'Rename failed' };
+    }
+    return { ok: false, error: 'Could not find an available technical name.' };
+}
+
+async function applyPendingMetaTechnicalRename() {
+    metaRenameTimer = null;
+    const target = pendingDerivedTechnical;
+    if (target == null || !canonicalTechnicalName) return;
+    if (target === canonicalTechnicalName) {
+        ensureModelMeta();
+        model.meta.technical_name = target;
+        schedulePersistWorkingModel();
+        return;
+    }
+    const from = canonicalTechnicalName;
+    const r = await renameWorkingToTechnicalName(from, target);
+    if (!r.ok) {
+        detailsPersistErrorText = r.error;
+        syncDetailsPersistBanner();
+        if (metadataTechnicalInputEl?.isConnected) {
+            metadataTechnicalInputEl.value = canonicalTechnicalName;
+        }
+        return;
+    }
+    canonicalTechnicalName = r.technical_name;
+    ensureModelMeta();
+    model.meta.technical_name = r.technical_name;
+    pendingDerivedTechnical = r.technical_name;
+    if (metadataTechnicalInputEl?.isConnected) {
+        metadataTechnicalInputEl.value = r.technical_name;
+    }
+    detailsPersistErrorText = null;
+    syncDetailsPersistBanner();
+    schedulePersistWorkingModel();
+}
 
 async function retrieveModel(technicalName, working) {
     const res = await fetch('/api/load_model', {
@@ -62,7 +163,11 @@ async function retrieveLayout(technicalName, working) {
 async function loadWorkingCopyAndRender(technicalName) {
     clearTimeout(persistModelTimer);
     persistModelTimer = null;
+    clearTimeout(metaRenameTimer);
+    metaRenameTimer = null;
+    pendingDerivedTechnical = null;
     canonicalTechnicalName = technicalName;
+    openedAsTechnicalName = technicalName;
     await retrieveModel(technicalName, true);
     await retrieveLayout(technicalName, true);
     modelToNodesEdges();
@@ -261,9 +366,10 @@ function appendDetailsFormField(form, labelText, control) {
     form.appendChild(wrap);
 }
 
-function renderEntityDetails(ent) {
+/** Replaces `#details-content` with persist banner, heading, and an empty `.details-form`. */
+function beginDetailsPane(headingText) {
     const root = document.getElementById('details-content');
-    if (!root) return;
+    if (!root) return null;
     root.replaceChildren();
     const banner = document.createElement('div');
     banner.id = 'details-persist-message';
@@ -273,11 +379,33 @@ function renderEntityDetails(ent) {
     syncDetailsPersistBanner();
 
     const h3 = document.createElement('h3');
-    h3.textContent = 'Entity';
+    h3.textContent = headingText;
     root.appendChild(h3);
 
     const form = document.createElement('div');
     form.className = 'details-form';
+    return { root, form };
+}
+
+/** Fills a `<select>` from `allowedValues`, appending `currentValue` when not in the list. */
+function fillDetailsEnumSelect(select, allowedValues, currentValue) {
+    const values = allowedValues.includes(currentValue)
+        ? allowedValues
+        : [...allowedValues, currentValue].filter(Boolean);
+    select.replaceChildren();
+    for (const v of values) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        if (v === currentValue) opt.selected = true;
+        select.appendChild(opt);
+    }
+}
+
+function renderEntityDetails(ent) {
+    const shell = beginDetailsPane('Entity');
+    if (!shell) return;
+    const { root, form } = shell;
 
     const inpBusiness = document.createElement('input');
     inpBusiness.type = 'text';
@@ -299,17 +427,7 @@ function renderEntityDetails(ent) {
     appendDetailsFormField(form, 'definition', taDef);
 
     const selType = document.createElement('select');
-    const currentType = ent.entity_type;
-    const types = SCHEMA_ENTITY_TYPES.includes(currentType)
-        ? SCHEMA_ENTITY_TYPES
-        : [...SCHEMA_ENTITY_TYPES, currentType].filter(Boolean);
-    for (const v of types) {
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = v;
-        if (v === currentType) opt.selected = true;
-        selType.appendChild(opt);
-    }
+    fillDetailsEnumSelect(selType, SCHEMA_ENTITY_TYPES, ent.entity_type);
     selType.addEventListener('change', () => {
         ent.entity_type = selType.value;
         schedulePersistWorkingModel();
@@ -371,22 +489,9 @@ function swapAttributeOrderWithNeighbor(attr, direction) {
 function renderAttributeDetails(attr) {
     clearPrecisionScaleUnlessDecimal(attr);
 
-    const root = document.getElementById('details-content');
-    if (!root) return;
-    root.replaceChildren();
-    const banner = document.createElement('div');
-    banner.id = 'details-persist-message';
-    banner.className = 'details-persist-message';
-    banner.hidden = true;
-    root.appendChild(banner);
-    syncDetailsPersistBanner();
-
-    const h3 = document.createElement('h3');
-    h3.textContent = 'Attribute';
-    root.appendChild(h3);
-
-    const form = document.createElement('div');
-    form.className = 'details-form';
+    const shell = beginDetailsPane('Attribute');
+    if (!shell) return;
+    const { root, form } = shell;
 
     const inpBusiness = document.createElement('input');
     inpBusiness.type = 'text';
@@ -417,17 +522,7 @@ function renderAttributeDetails(attr) {
     appendDetailsFormField(form, 'source_mapping', inpMap);
 
     const selData = document.createElement('select');
-    const currentDt = attr.data_type;
-    const dts = SCHEMA_DATA_TYPES.includes(currentDt)
-        ? SCHEMA_DATA_TYPES
-        : [...SCHEMA_DATA_TYPES, currentDt].filter(Boolean);
-    for (const v of dts) {
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = v;
-        if (v === currentDt) opt.selected = true;
-        selData.appendChild(opt);
-    }
+    fillDetailsEnumSelect(selData, SCHEMA_DATA_TYPES, attr.data_type);
     selData.addEventListener('change', () => {
         attr.data_type = selData.value;
         clearPrecisionScaleUnlessDecimal(attr);
@@ -562,22 +657,9 @@ function deriveRelationshipCardinality(rel) {
 }
 
 function renderRelationshipDetails(rel) {
-    const root = document.getElementById('details-content');
-    if (!root) return;
-    root.replaceChildren();
-    const banner = document.createElement('div');
-    banner.id = 'details-persist-message';
-    banner.className = 'details-persist-message';
-    banner.hidden = true;
-    root.appendChild(banner);
-    syncDetailsPersistBanner();
-
-    const h3 = document.createElement('h3');
-    h3.textContent = 'Relationship';
-    root.appendChild(h3);
-
-    const form = document.createElement('div');
-    form.className = 'details-form';
+    const shell = beginDetailsPane('Relationship');
+    if (!shell) return;
+    const { root, form } = shell;
 
     function addBoolField(labelText, checked, onChange) {
         const cb = document.createElement('input');
@@ -593,16 +675,7 @@ function renderRelationshipDetails(rel) {
 
     function addSideCardinalitySelect(labelText, current, setField) {
         const sel = document.createElement('select');
-        const list = SCHEMA_SIDE_CARDINALITY.includes(current)
-            ? SCHEMA_SIDE_CARDINALITY
-            : [...SCHEMA_SIDE_CARDINALITY, current].filter(Boolean);
-        for (const v of list) {
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = v;
-            if (v === current) opt.selected = true;
-            sel.appendChild(opt);
-        }
+        fillDetailsEnumSelect(sel, SCHEMA_SIDE_CARDINALITY, current);
         sel.addEventListener('change', () => {
             setField(sel.value);
             deriveRelationshipCardinality(rel);
@@ -677,6 +750,92 @@ function renderRelationshipDetails(rel) {
     }
 }
 
+function ensureModelMeta() {
+    if (!model.meta || typeof model.meta !== 'object') {
+        model.meta = {};
+    }
+}
+
+function appendDetailsReadonlyField(form, labelText, textContent) {
+    const el = document.createElement('div');
+    el.className = 'details-readonly-value';
+    el.textContent = textContent ?? '';
+    appendDetailsFormField(form, labelText, el);
+}
+
+/** Shown when no diagram selection is active and a working model is open. */
+function renderModelMetadataDetails() {
+    ensureModelMeta();
+    const meta = model.meta;
+    const sanitizedName = sanitizeMetaModelName(meta.name ?? '');
+    if (sanitizedName !== (meta.name ?? '')) {
+        meta.name = sanitizedName;
+        schedulePersistWorkingModel();
+    }
+    pendingDerivedTechnical = displayNameToTechnicalName(meta.name ?? '');
+    const shell = beginDetailsPane('Model metadata');
+    if (!shell) return;
+    const { root, form } = shell;
+
+    const inpName = document.createElement('input');
+    inpName.type = 'text';
+    inpName.maxLength = 500;
+    inpName.title = 'Letters, numbers, spaces, and underscores only.';
+    inpName.value = meta.name ?? '';
+    inpName.addEventListener('input', () => {
+        applyMetaModelNameSanitizeToInput(inpName);
+        meta.name = inpName.value;
+        const derived = displayNameToTechnicalName(meta.name);
+        inpTechnical.value = derived;
+        pendingDerivedTechnical = derived;
+        clearTimeout(metaRenameTimer);
+        metaRenameTimer = setTimeout(() => applyPendingMetaTechnicalRename(), 450);
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'name', inpName);
+
+    const inpTechnical = document.createElement('input');
+    inpTechnical.type = 'text';
+    inpTechnical.readOnly = true;
+    inpTechnical.value = meta.technical_name ?? canonicalTechnicalName ?? '';
+    inpTechnical.title =
+        'Derived from the model name (lower_snake_case). Renames working files after you pause typing.';
+    metadataTechnicalInputEl = inpTechnical;
+    appendDetailsFormField(form, 'technical_name', inpTechnical);
+
+    const inpVersion = document.createElement('input');
+    inpVersion.type = 'text';
+    inpVersion.value = meta.version ?? '';
+    inpVersion.addEventListener('input', () => {
+        meta.version = inpVersion.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'version', inpVersion);
+
+    const inpCreatedBy = document.createElement('input');
+    inpCreatedBy.type = 'text';
+    inpCreatedBy.value = meta.created_by ?? '';
+    inpCreatedBy.addEventListener('input', () => {
+        meta.created_by = inpCreatedBy.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'created_by', inpCreatedBy);
+
+    const taDesc = document.createElement('textarea');
+    taDesc.rows = 4;
+    taDesc.value = meta.description ?? '';
+    taDesc.addEventListener('input', () => {
+        meta.description = taDesc.value;
+        schedulePersistWorkingModel();
+    });
+    appendDetailsFormField(form, 'description', taDesc);
+
+    appendDetailsReadonlyField(form, 'created', meta.created ?? '');
+    appendDetailsReadonlyField(form, 'modified', meta.modified ?? '');
+
+    root.appendChild(form);
+}
+
 function renderDetailsError(message) {
     const root = document.getElementById('details-content');
     if (!root) return;
@@ -691,13 +850,19 @@ function clearDetailsPane() {
     detailsPersistErrorText = null;
     clearTimeout(persistModelTimer);
     persistModelTimer = null;
-    const root = document.getElementById('details-content');
-    if (!root) return;
-    root.replaceChildren();
-    const p = document.createElement('p');
-    p.className = 'details-placeholder';
-    p.textContent = 'Select an entity, attribute, or relationship on the diagram.';
-    root.appendChild(p);
+    clearTimeout(metaRenameTimer);
+    metaRenameTimer = null;
+    if (!canonicalTechnicalName) {
+        const root = document.getElementById('details-content');
+        if (!root) return;
+        root.replaceChildren();
+        const p = document.createElement('p');
+        p.className = 'details-placeholder';
+        p.textContent = 'Open or create a model to view metadata and diagram elements.';
+        root.appendChild(p);
+        return;
+    }
+    renderModelMetadataDetails();
 }
 
 function modelToNodesEdges() {
@@ -1054,9 +1219,6 @@ function openNewModelDialog() {
     queueMicrotask(() => document.getElementById('new-model-name')?.focus());
 }
 
-/** Must match TECHNICAL_NAME_RE in app.py (UX only; server enforces in parse_technical_name_field). */
-const TECHNICAL_NAME_RE = /^[a-z][a-z0-9_]*$/;
-
 async function submitNewModel(ev) {
     ev.preventDefault();
     const nameInput = document.getElementById('new-model-name');
@@ -1067,7 +1229,7 @@ async function submitNewModel(ev) {
     const submitBtn = document.getElementById('new-model-submit');
     const dialog = document.getElementById('new-model-dialog');
     if (!nameInput || !technicalInput || !dialog) return;
-    const name = nameInput.value.trim();
+    const name = sanitizeMetaModelName(nameInput.value).trim();
     if (!name) {
         alert('Enter a name.');
         return;
@@ -1120,6 +1282,9 @@ async function submitNewModel(ev) {
 }
 
 document.getElementById('new-model-btn')?.addEventListener('click', () => openNewModelDialog());
+document.getElementById('new-model-name')?.addEventListener('input', (ev) => {
+    applyMetaModelNameSanitizeToInput(ev.target);
+});
 document.getElementById('new-model-form')?.addEventListener('submit', (ev) => submitNewModel(ev));
 document.getElementById('new-model-cancel')?.addEventListener('click', () => {
     document.getElementById('new-model-dialog')?.close();
@@ -1137,6 +1302,9 @@ async function saveCanonicalModel() {
     }
     clearTimeout(persistModelTimer);
     persistModelTimer = null;
+    clearTimeout(metaRenameTimer);
+    metaRenameTimer = null;
+    await applyPendingMetaTechnicalRename();
     const flushed = await persistWorkingModel();
     if (!flushed) {
         alert(
@@ -1149,16 +1317,21 @@ async function saveCanonicalModel() {
     const btn = document.getElementById('save-model-btn');
     if (btn) btn.disabled = true;
     try {
+        const saveBody = { technical_name: canonicalTechnicalName };
+        if (openedAsTechnicalName && openedAsTechnicalName !== canonicalTechnicalName) {
+            saveBody.supersede_technical_name = openedAsTechnicalName;
+        }
         const res = await fetch('/api/save_model', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ technical_name: canonicalTechnicalName }),
+            body: JSON.stringify(saveBody),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
             alert(data.error || res.statusText || 'Could not save model.');
             return;
         }
+        openedAsTechnicalName = canonicalTechnicalName;
     } catch (e) {
         console.error(e);
         alert(e.message || 'Could not save model.');

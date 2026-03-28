@@ -199,6 +199,12 @@
             border-radius: 4px;
         }
 
+        input.details-field-control:read-only {
+            background: #f4f4f4;
+            color: #444;
+            cursor: default;
+        }
+
         .details-field textarea.details-field-control {
             resize: vertical;
             min-height: 4rem;
@@ -378,7 +384,7 @@
             <aside class="details-pane" aria-label="Details">
                 <h2>Details</h2>
                 <div id="details-content">
-                    <p class="details-placeholder">Select an entity, attribute, or relationship on the diagram.</p>
+                    <p class="details-placeholder">Open or create a model to view metadata and diagram elements.</p>
                 </div>
             </aside>
         </div>
@@ -399,13 +405,14 @@
         <form class="dialog-body" id="new-model-form">
             <label for="new-model-name">Name</label>
             <input type="text" id="new-model-name" name="name" required autocomplete="off" maxlength="500"
-                placeholder="e.g. Customer warehouse">
+                placeholder="e.g. Customer warehouse"
+                title="Letters, numbers, spaces, and underscores only">
             <label for="new-model-technical-name">Technical name</label>
             <input type="text" id="new-model-technical-name" name="technical_name" required autocomplete="off"
                 placeholder="e.g. customer_warehouse"
                 pattern="[a-z][a-z0-9_]*" maxlength="200"
                 title="lower_snake_case: start with a letter; then letters, digits, underscores">
-            <p class="field-hint"><code>meta.name</code> is the label above; <code>meta.technical_name</code> is the id and file stem (<code>data/models/&lt;technical_name&gt;.json</code>). Edits use <code>temp_&lt;technical_name&gt;</code> until you save.</p>
+            <p class="field-hint"><code>meta.name</code> is the label above; <code>meta.technical_name</code> is the id and file stem (<code>data/models/&lt;technical_name&gt;.json</code>). Edits use <code>temp_&lt;technical_name&gt;</code> until you save. After creation, changing the name in the Details panel derives a new technical name and renames working files; Save to canonical replaces the old file when the stem changed.</p>
             <label for="new-model-version">Version</label>
             <input type="text" id="new-model-version" name="version" required autocomplete="off" maxlength="100"
                 placeholder="1.0.0" value="1.0.0">
