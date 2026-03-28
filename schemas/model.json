@@ -178,7 +178,7 @@
                         "format": "uuid"
                     },
                     "relationship_name": {
-                        "description": "Name of the relationship, in format of 'parent_entity.parent_attribute 1:M child_entity.childattribute'",
+                        "description": "Name of the relationship, in format of 'parent_entity.parent_attribute 1..1 : 1..* child_entity.childattribute' (UML multiplicities).",
                         "type": "string"
                     },
                     "parent_entity_id": {
@@ -228,14 +228,9 @@
                         ]
                     },
                     "cardinality" :{
-                        "description": "Overall cardinality of the relationship in format of '1:1', '1:M', 'M:1', 'M:M'.",
+                        "description": "Derived UML multiplicities parent-side : child-side (each side is 0..1, 1..1, 0..*, or 1..*).",
                         "type": "string",
-                        "enum": [
-                            "1:1",
-                            "1:M",
-                            "M:1",
-                            "M:M"
-                        ]
+                        "pattern": "^(0\\.\\.1|1\\.\\.1|0\\.\\.\\*|1\\.\\.\\*) : (0\\.\\.1|1\\.\\.1|0\\.\\.\\*|1\\.\\.\\*)$"
                     }
                 },
                 "required": [

@@ -101,7 +101,7 @@
     },
     "relationships": [
         {
-            "cardinality": "1:M",
+            "cardinality": "1..1 : 1..*",
             "child_attribute_id": "a3000000-0000-4000-8000-000000000003",
             "child_cardinality": "Many",
             "child_entity_id": "e2000000-0000-4000-8000-000000000002",
@@ -111,7 +111,7 @@
             "parent_entity_id": "e1000000-0000-4000-8000-000000000001",
             "parent_mandatory": true,
             "relationship_id": "7c2f8a91-3d4e-4b1c-9f6e-8a5d3c2b1e00",
-            "relationship_name": "entity_nm.col_one 1:M entity_nm_2.col_one"
+            "relationship_name": "entity_nm.col_one 1..1 : 1..* entity_nm_2.col_one"
         }
     ]
 }

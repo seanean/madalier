@@ -548,8 +548,6 @@ async function loadWorkingCopyAndRender(technicalName) {
     lastValidModelMetaName = (model.meta?.name ?? '').trim() || technicalName;
     await retrieveLayout(technicalName, true);
     modelToNodesEdges();
-    console.log('Nodes created:', nodes.length);
-    console.log('Edges created:', edges.length);
     selectedEntityId = null;
     diagramRemovalSelection = null;
     syncAddAttributeButtonState();
@@ -1338,11 +1336,19 @@ function relationshipReadonlyDisplay(rel, key) {
     }
 }
 
-/** Sets rel.cardinality to 1:1 / 1:M / M:1 / M:M from parent_cardinality and child_cardinality (One|Many). */
+/** UML multiplicity for one association end: One|Many × mandatory (false → optional). */
+function umlSideMultiplicity(sideCardinality, mandatory) {
+    const many = sideCardinality === 'Many';
+    const opt = mandatory === false;
+    if (many) return opt ? '0..*' : '1..*';
+    return opt ? '0..1' : '1..1';
+}
+
+/** Sets rel.cardinality to UML "parent : child" from side cardinalities and mandatory flags. */
 function deriveRelationshipCardinality(rel) {
-    const p = rel.parent_cardinality === 'Many' ? 'M' : '1';
-    const c = rel.child_cardinality === 'Many' ? 'M' : '1';
-    rel.cardinality = `${p}:${c}`;
+    const p = umlSideMultiplicity(rel.parent_cardinality, rel.parent_mandatory);
+    const c = umlSideMultiplicity(rel.child_cardinality, rel.child_mandatory);
+    rel.cardinality = `${p} : ${c}`;
 }
 
 /** Sets rel.relationship_name from technical names and derived cardinality; no-op if entities/attributes are missing. */
@@ -1386,6 +1392,7 @@ function renderRelationshipDetails(rel) {
         cb.addEventListener('change', () => {
             onChange(cb.checked);
             syncRelationshipName(rel);
+            cardinalityValueEl.textContent = rel.cardinality;
             patchRelationshipEdgeData(rel);
             schedulePersistWorkingModel();
         });
@@ -2322,6 +2329,8 @@ function updateAddRelationshipPreview() {
     const ca = document.getElementById('add-relationship-child-attribute')?.value ?? '';
     const pc = document.getElementById('add-relationship-parent-cardinality')?.value ?? 'One';
     const cc = document.getElementById('add-relationship-child-cardinality')?.value ?? 'One';
+    const pm = document.getElementById('add-relationship-parent-mandatory')?.checked === true;
+    const cm = document.getElementById('add-relationship-child-mandatory')?.checked === true;
     if (!cardEl || !nameEl) return;
     if (!pe || !pa || !ce || !ca) {
         cardEl.value = '';
@@ -2335,6 +2344,8 @@ function updateAddRelationshipPreview() {
         child_attribute_id: ca,
         parent_cardinality: pc,
         child_cardinality: cc,
+        parent_mandatory: pm,
+        child_mandatory: cm,
     };
     deriveRelationshipCardinality(scratch);
     const pEnt = findEntityById(pe);
