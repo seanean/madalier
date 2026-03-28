@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 from app_logger import get_logger
+import ddl_export
 import base64
 import binascii
 import csv
@@ -675,6 +676,49 @@ def api_export_model_csv():
         logger.error('export_model_csv write failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
     return jsonify({'success': True, 'path': rel_path}), 200
+
+
+@app.route('/api/export_model_ddl', methods=['POST'])
+def api_export_model_ddl():
+    data = request.get_json(silent=True)
+    path_stem = path_stem_from_envelope(data)
+    path = model_json_path(path_stem)
+    with open(path, encoding='utf-8') as f:
+        model_doc = json.load(f)
+    with open('schemas/model.json') as f:
+        model_schema = json.load(f)
+    try:
+        jsonschema.validate(instance=model_doc, schema=model_schema)
+    except jsonschema.ValidationError as e:
+        logger.error('export_model_ddl validation failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+    meta = model_doc.get('meta') or {}
+    tn = meta.get('technical_name')
+    if not isinstance(tn, str) or not tn.strip():
+        return jsonify({'success': False, 'error': 'model meta.technical_name is missing'}), 400
+    try:
+        parse_technical_name_value(tn, field='meta.technical_name')
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), 400
+    os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
+    base_ddls = os.path.join(MODELS_DIR, tn, 'ddls')
+    try:
+        written = ddl_export.write_model_ddls(model_doc, base_ddls)
+    except ddl_export.DdlExportError as e:
+        logger.error('export_model_ddl failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except OSError as e:
+        logger.error('export_model_ddl write failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    rel_base = f'data/models/{tn}/ddls'
+    logger.info('Exported model DDL under %s (%d files)', base_ddls, len(written))
+    return jsonify(
+        {
+            'success': True,
+            'base': rel_base,
+            'file_count': len(written),
+        }
+    ), 200
 
 
 @app.route('/api/save_diagram_png', methods=['POST'])
