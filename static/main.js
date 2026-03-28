@@ -2682,6 +2682,43 @@ async function exportDiagramPng() {
 
 document.getElementById('export-diagram-btn')?.addEventListener('click', () => void exportDiagramPng());
 
+async function exportModelCsv() {
+    if (!canonicalTechnicalName) {
+        alert('Open or create a model first.');
+        return;
+    }
+    const btn = document.getElementById('export-csv-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const ok = await persistWorkingModel();
+        if (!ok) {
+            alert(detailsPersistErrorText || 'Could not save working copy before export.');
+            return;
+        }
+        const res = await fetch('/api/export_model_csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                technical_name: canonicalTechnicalName,
+                working: true,
+            }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            alert(data.error || res.statusText || 'Could not export CSV.');
+            return;
+        }
+        alert(`CSV saved to ${data.path}`);
+    } catch (e) {
+        console.error(e);
+        alert(e.message || 'Export failed.');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+document.getElementById('export-csv-btn')?.addEventListener('click', () => void exportModelCsv());
+
 initAddAttributeDataTypeSelect();
 syncAddRelationshipButtonState();
 syncRemoveSelectedButtonState();

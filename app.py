@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from app_logger import get_logger
 import base64
 import binascii
+import csv
 import json
 import jsonschema
 import os
@@ -73,6 +74,22 @@ def path_stem_from_envelope(data, *, require_working=False):
 MODELS_DIR = os.path.join('data', 'models')
 LAYOUTS_DIR = os.path.join(MODELS_DIR, 'layouts')
 DIAGRAMS_DIR = os.path.join(MODELS_DIR, 'diagrams')
+CSV_DIR = os.path.join(MODELS_DIR, 'csv')
+
+MODEL_CSV_COLUMNS = (
+    'entity_type',
+    'entity_business_name',
+    'entity_technical_name',
+    'entity_definition',
+    'attribute_business_name',
+    'attribute_technical_name',
+    'mandatory',
+    'data_type',
+    'precision',
+    'scale',
+    'attribute_definition',
+    'source_mapping',
+)
 
 # Reject absurd uploads (decoded PNG bytes).
 MAX_DIAGRAM_PNG_BYTES = 15 * 1024 * 1024
@@ -102,6 +119,82 @@ def model_json_path(stem):
 
 def layout_json_path(stem):
     return os.path.join(LAYOUTS_DIR, f'{stem}.json')
+
+
+def _csv_optional_str(value):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _csv_mandatory_cell(attr):
+    if 'mandatory' not in attr:
+        return ''
+    v = attr['mandatory']
+    if not isinstance(v, bool):
+        return ''
+    return 'true' if v else 'false'
+
+
+def _csv_int_cell(attr, key):
+    if key not in attr:
+        return ''
+    v = attr[key]
+    if v is None:
+        return ''
+    if isinstance(v, bool):
+        return ''
+    if isinstance(v, int):
+        return str(v)
+    return str(v)
+
+
+def _entity_csv_prefix(ent):
+    return [
+        _csv_optional_str(ent.get('entity_type')),
+        _csv_optional_str(ent.get('business_name')),
+        _csv_optional_str(ent.get('technical_name')),
+        _csv_optional_str(ent.get('definition')),
+    ]
+
+
+def _attribute_csv_suffix(attr):
+    return [
+        _csv_optional_str(attr.get('business_name')),
+        _csv_optional_str(attr.get('technical_name')),
+        _csv_mandatory_cell(attr),
+        _csv_optional_str(attr.get('data_type')),
+        _csv_int_cell(attr, 'precision'),
+        _csv_int_cell(attr, 'scale'),
+        _csv_optional_str(attr.get('definition')),
+        _csv_optional_str(attr.get('source_mapping')),
+    ]
+
+
+def model_doc_to_csv_rows(model_doc):
+    """One row per attribute; entities with no attributes get one row with blank attribute columns."""
+    rows = []
+    for ent in model_doc.get('entities') or []:
+        prefix = _entity_csv_prefix(ent)
+        attrs = list(ent.get('attributes') or [])
+        indexed = list(enumerate(attrs))
+        indexed.sort(
+            key=lambda i_a: (
+                i_a[1].get('attribute_order')
+                if isinstance(i_a[1].get('attribute_order'), int)
+                else (10**9),
+                i_a[0],
+            )
+        )
+        ordered_attrs = [a for _, a in indexed]
+        if not ordered_attrs:
+            rows.append(prefix + [''] * (len(MODEL_CSV_COLUMNS) - 4))
+        else:
+            for attr in ordered_attrs:
+                rows.append(prefix + _attribute_csv_suffix(attr))
+    return rows
 
 
 def path_stem_from_load_json():
@@ -437,6 +530,44 @@ def api_save_working_model():
     except OSError as e:
         logger.error('save_working_model write failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/export_model_csv', methods=['POST'])
+def api_export_model_csv():
+    data = request.get_json(silent=True)
+    path_stem = path_stem_from_envelope(data)
+    path = model_json_path(path_stem)
+    with open(path, encoding='utf-8') as f:
+        model_doc = json.load(f)
+    with open('schemas/model.json') as f:
+        model_schema = json.load(f)
+    try:
+        jsonschema.validate(instance=model_doc, schema=model_schema)
+    except jsonschema.ValidationError as e:
+        logger.error('export_model_csv validation failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+    meta = model_doc.get('meta') or {}
+    tn = meta.get('technical_name')
+    if not isinstance(tn, str) or not tn.strip():
+        return jsonify({'success': False, 'error': 'model meta.technical_name is missing'}), 400
+    try:
+        parse_technical_name_value(tn, field='meta.technical_name')
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), 400
+    os.makedirs(CSV_DIR, exist_ok=True)
+    out_path = os.path.join(CSV_DIR, f'{tn}.csv')
+    rel_path = f'data/models/csv/{tn}.csv'
+    try:
+        with open(out_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(MODEL_CSV_COLUMNS)
+            for row in model_doc_to_csv_rows(model_doc):
+                writer.writerow(row)
+        logger.info('Exported model CSV %s', out_path)
+    except OSError as e:
+        logger.error('export_model_csv write failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'path': rel_path}), 200
 
 
 @app.route('/api/save_diagram_png', methods=['POST'])
