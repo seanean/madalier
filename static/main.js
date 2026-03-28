@@ -27,6 +27,19 @@ function measureLabelWidth(text) {
     return ctx.measureText(t).width;
 }
 
+/** Canvas measureText with optional semibold/bold to match Cytoscape key-type labels. */
+function measureLabelWidthWithOptions(text, { bold = false } = {}) {
+    const t = text == null ? '' : String(text);
+    if (!_measureLabelCanvas) {
+        _measureLabelCanvas = document.createElement('canvas');
+    }
+    const ctx = _measureLabelCanvas.getContext('2d');
+    ctx.font = bold
+        ? `600 ${DIAGRAM_LABEL_FONT_PX}px ${DIAGRAM_FONT_FAMILY}`
+        : DIAGRAM_LABEL_FONT;
+    return ctx.measureText(t).width;
+}
+
 function displayNameForEntityCard(ent) {
     if (showTechnicalNamesInDiagram) {
         const t = String(ent?.technical_name ?? '').trim();
@@ -43,12 +56,49 @@ function displayNameForAttributeCard(attr) {
     return String(attr?.business_name ?? '');
 }
 
+function keyTypeAbbrev(keyType) {
+    switch (keyType) {
+        case 'PRIMARY':
+            return 'PK';
+        case 'FOREIGN':
+            return 'FK';
+        case 'NATURAL':
+            return 'NK';
+        default:
+            return '';
+    }
+}
+
+/** Diagram row: `PK | name *`, `name *`, `name` (no brackets). */
+function formatAttributeRowLabel(displayName, keyType, mandatory) {
+    const prefix = keyType ? `${keyTypeAbbrev(keyType)} | ` : '';
+    const tail = mandatory ? ' *' : '';
+    return `${prefix}${displayName}${tail}`;
+}
+
+function attributeRowLabelForAttr(attr) {
+    return formatAttributeRowLabel(
+        displayNameForAttributeCard(attr),
+        attr?.key_type ?? null,
+        attr?.mandatory === true,
+    );
+}
+
+function measureAttributeRowLabelWidth(attr) {
+    const row = attributeRowLabelForAttr(attr);
+    const bold =
+        attr?.key_type === 'PRIMARY' ||
+        attr?.key_type === 'FOREIGN' ||
+        attr?.key_type === 'NATURAL';
+    return measureLabelWidthWithOptions(row, { bold });
+}
+
 function computeCardWidthForEntity(ent) {
     const nameW = measureLabelWidth(displayNameForEntityCard(ent));
     const attrs = ent?.attributes || [];
     let maxAttrW = 0;
     for (const a of attrs) {
-        maxAttrW = Math.max(maxAttrW, measureLabelWidth(displayNameForAttributeCard(a)));
+        maxAttrW = Math.max(maxAttrW, measureAttributeRowLabelWidth(a));
     }
     const contentW = attrs.length === 0 ? nameW : Math.max(nameW, maxAttrW);
     return Math.max(MIN_CARD_WIDTH, Math.ceil(contentW + CARD_H_PADDING));
@@ -802,13 +852,39 @@ function effectiveDiagramLabel(businessName, technicalName) {
     return String(businessName ?? '');
 }
 
+/** Syncs one attribute node’s label, keyType, mandatory, and names from the in-memory model. */
+function applyAttributeNodeDataInCy(attr) {
+    if (!cy || !attr) return;
+    const n = cy.getElementById(attr.attribute_id);
+    if (n.empty()) return;
+    const kt = attr.key_type == null ? null : attr.key_type;
+    n.data('label', attributeRowLabelForAttr(attr));
+    n.data('businessName', String(attr.business_name ?? ''));
+    n.data('technicalName', String(attr.technical_name ?? ''));
+    n.data('keyType', kt);
+    n.data('mandatory', attr.mandatory === true);
+    const ent = findEntityContainingAttribute(attr.attribute_id);
+    if (ent) syncEntityCardWidthInCy(ent.entity_id);
+    else cy.style().update();
+}
+
 function syncCyLabelsToDisplayMode() {
     if (!cy) return;
     cy.batch(() => {
-        cy.nodes('[type = "entity"], [type = "entity-header"], [type = "attribute"]').forEach((n) => {
+        cy.nodes('[type = "entity"], [type = "entity-header"]').forEach((n) => {
             const biz = n.data('businessName');
             const tech = n.data('technicalName');
             n.data('label', effectiveDiagramLabel(biz, tech));
+        });
+        cy.nodes('[type = "attribute"]').forEach((n) => {
+            const attr = findAttributeById(n.id());
+            if (!attr) return;
+            const kt = attr.key_type == null ? null : attr.key_type;
+            n.data('label', attributeRowLabelForAttr(attr));
+            n.data('businessName', String(attr.business_name ?? ''));
+            n.data('technicalName', String(attr.technical_name ?? ''));
+            n.data('keyType', kt);
+            n.data('mandatory', attr.mandatory === true);
         });
     });
     for (const ent of model.entities || []) {
@@ -848,17 +924,11 @@ function patchEntityLabelInCy(entityId, businessName) {
 function patchAttributeLabelInCy(attributeId, businessName) {
     if (!cy) return;
     const m = findAttributeById(attributeId);
-    const biz =
-        businessName !== undefined && businessName !== null ? businessName : (m?.business_name ?? '');
-    const tech = m?.technical_name ?? '';
-    const label = effectiveDiagramLabel(biz, tech);
-    const n = cy.getElementById(attributeId);
-    if (n.nonempty()) {
-        n.data('label', label);
-        n.data('businessName', String(biz ?? ''));
+    if (!m) return;
+    if (businessName !== undefined && businessName !== null) {
+        m.business_name = businessName;
     }
-    const ent = findEntityContainingAttribute(attributeId);
-    if (ent) syncEntityCardWidthInCy(ent.entity_id);
+    applyAttributeNodeDataInCy(m);
 }
 
 function patchEntityTechnicalNameInCy(entityId, technicalName) {
@@ -881,16 +951,12 @@ function patchEntityTechnicalNameInCy(entityId, technicalName) {
 
 function patchAttributeTechnicalNameInCy(attributeId, technicalName) {
     if (!cy) return;
-    const n = cy.getElementById(attributeId);
     const m = findAttributeById(attributeId);
-    const t = technicalName ?? '';
-    const label = effectiveDiagramLabel(m?.business_name ?? '', t);
-    if (n.nonempty()) {
-        n.data('technicalName', t);
-        n.data('label', label);
+    if (!m) return;
+    if (technicalName !== undefined) {
+        m.technical_name = technicalName ?? '';
     }
-    const ent = findEntityContainingAttribute(attributeId);
-    if (ent) syncEntityCardWidthInCy(ent.entity_id);
+    applyAttributeNodeDataInCy(m);
 }
 
 function syncDetailsPersistBanner() {
@@ -1202,6 +1268,7 @@ function renderAttributeDetails(attr) {
     selKey.addEventListener('change', () => {
         const v = selKey.value;
         attr.key_type = v === '' ? null : v;
+        applyAttributeNodeDataInCy(attr);
         schedulePersistWorkingModel();
     });
     appendDetailsFormField(form, 'key_type', selKey);
@@ -1215,6 +1282,7 @@ function renderAttributeDetails(attr) {
         } else {
             delete attr.mandatory;
         }
+        applyAttributeNodeDataInCy(attr);
         schedulePersistWorkingModel();
     });
     appendDetailsFormField(form, 'mandatory', cbMandatory);
@@ -1715,14 +1783,15 @@ function modelToNodesEdges() {
             nodes.push(
                 {
                     data: {
-                        label: attr.business_name,
+                        label: attributeRowLabelForAttr(attr),
                         id: attr.attribute_id,
                         businessName: attr.business_name,
                         technicalName: attr.technical_name,
                         dataType: attr.data_type,
                         precision: (attr.precision === undefined) ? undefined : attr.precision,
                         scale: (attr.scale === undefined) ? undefined : attr.scale,
-                        keyType: attr.key_type,
+                        keyType: attr.key_type == null ? null : attr.key_type,
+                        mandatory: attr.mandatory === true,
                         sourceMapping: attr.source_mapping,
                         definition: attr.definition,
                         parent: ent.entity_id,
@@ -2116,6 +2185,29 @@ const cyStyle = [
             'border-width': 1,
             'font-family': DIAGRAM_FONT_FAMILY,
             'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
+            'color': '#333',
+            'font-weight': 'normal',
+        }
+    },
+    {
+        selector: 'node[type = "attribute"][keyType = "PRIMARY"]',
+        style: {
+            'font-weight': 'bold',
+            'color': '#1a1a1a',
+        }
+    },
+    {
+        selector: 'node[type = "attribute"][keyType = "FOREIGN"]',
+        style: {
+            'font-weight': 'bold',
+            'color': '#c2410c',
+        }
+    },
+    {
+        selector: 'node[type = "attribute"][keyType = "NATURAL"]',
+        style: {
+            'font-weight': 'bold',
+            'color': '#6b21a8',
         }
     },
     {

@@ -8,7 +8,7 @@
                     "business_name": "Column One",
                     "data_type": "STRING",
                     "definition": "sample string",
-                    "key_type": null,
+                    "key_type": "PRIMARY",
                     "mandatory": true,
                     "source_mapping": "something.there",
                     "technical_name": "col_one"
@@ -41,7 +41,7 @@
                     "business_name": "Column One",
                     "data_type": "BIGINT",
                     "definition": "sample string",
-                    "key_type": null,
+                    "key_type": "FOREIGN",
                     "mandatory": true,
                     "source_mapping": "something.there",
                     "technical_name": "col_one"
@@ -52,7 +52,7 @@
                     "business_name": "Column X",
                     "data_type": "DECIMAL",
                     "definition": "sample string",
-                    "key_type": null,
+                    "key_type": "NATURAL",
                     "mandatory": true,
                     "precision": 1,
                     "scale": 1,
@@ -85,7 +85,6 @@
                     "data_type": "STRING",
                     "definition": "nnnnnnnnnnn",
                     "key_type": null,
-                    "mandatory": true,
                     "technical_name": "nbbbbbbbb"
                 }
             ],
@@ -100,7 +99,7 @@
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-28T17:43:31.067287Z",
+        "modified": "2026-03-28T22:14:38.461325Z",
         "name": "test modello time",
         "technical_name": "test_modello_time",
         "version": "1.0.0"

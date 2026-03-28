@@ -4,5 +4,4 @@ table,Entity Name,entity_nm,entity name definition,Column Two,col_two,true,DECIM
 table,Entity Name 23,entity_nm_2,entity name definition,Column One,col_one,true,BIGINT,,,sample string,something.there
 table,Entity Name 23,entity_nm_2,entity name definition,Column X,col_x,true,DECIMAL,1,1,sample string,something.here
 table,jnhkm,jnhkm,hbjnk,hnjkm,hnjkm,true,STRING,,,bhjnkm,
-table,jnhkm,jnhkm,hbjnk,nbbbbbbbb,nbbbbbbbb,true,STRING,,,nnnnnnnnnnn,
-table,new one,new_one,,ne attrtetete,ne_attrtetete,,STRING,,,,
+table,jnhkm,jnhkm,hbjnk,nbbbbbbbb,nbbbbbbbb,,STRING,,,nnnnnnnnnnn,
