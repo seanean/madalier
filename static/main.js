@@ -789,6 +789,8 @@ function patchRelationshipEdgeData(rel) {
     e.data('childMandatory', rel.child_mandatory);
     e.data('parentCardinality', rel.parent_cardinality);
     e.data('childCardinality', rel.child_cardinality);
+    e.data('sourceMultiplicity', umlSideMultiplicity(rel.parent_cardinality, rel.parent_mandatory));
+    e.data('targetMultiplicity', umlSideMultiplicity(rel.child_cardinality, rel.child_mandatory));
     cy.style().update();
 }
 
@@ -1735,7 +1737,9 @@ function modelToNodesEdges() {
                     childMandatory: rel.child_mandatory,
                     parentCardinality: rel.parent_cardinality,
                     childCardinality: rel.child_cardinality,
-                    cardinality: rel.cardinality
+                    cardinality: rel.cardinality,
+                    sourceMultiplicity: umlSideMultiplicity(rel.parent_cardinality, rel.parent_mandatory),
+                    targetMultiplicity: umlSideMultiplicity(rel.child_cardinality, rel.child_mandatory),
                 }
             }
         )
@@ -2121,6 +2125,15 @@ const cyStyle = [
         style: {
             'width': 2,
             'label': '',
+            'source-label': 'data(sourceMultiplicity)',
+            'target-label': 'data(targetMultiplicity)',
+            // Along-edge distance from endpoints; margins alone sit too close to attribute rows.
+            'source-text-offset': `${ROW_H}px`,
+            'target-text-offset': `${ROW_H}px`,
+            'source-text-margin-x': 0,
+            'source-text-margin-y': -6,
+            'target-text-margin-x': 0,
+            'target-text-margin-y': -6,
             'curve-style': 'taxi',
             'taxi-direction': 'horizontal',
             'taxi-turn': 50,
