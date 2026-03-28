@@ -94,14 +94,14 @@
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-28T09:51:40.480535Z",
+        "modified": "2026-03-28T17:40:01.890669Z",
         "name": "MODEL AGAINNNN",
         "technical_name": "model_againnnn",
         "version": "1.0.0"
     },
     "relationships": [
         {
-            "cardinality": "1..1 : 1..*",
+            "cardinality": "0..1 : 1..*",
             "child_attribute_id": "a3000000-0000-4000-8000-000000000003",
             "child_cardinality": "Many",
             "child_entity_id": "e2000000-0000-4000-8000-000000000002",
@@ -109,9 +109,9 @@
             "parent_attribute_id": "a1000000-0000-4000-8000-000000000001",
             "parent_cardinality": "One",
             "parent_entity_id": "e1000000-0000-4000-8000-000000000001",
-            "parent_mandatory": true,
+            "parent_mandatory": false,
             "relationship_id": "7c2f8a91-3d4e-4b1c-9f6e-8a5d3c2b1e00",
-            "relationship_name": "entity_nm.col_one 1..1 : 1..* entity_nm_2.col_one"
+            "relationship_name": "entity_nm.col_one 0..1 : 1..* entity_nm_2.col_one"
         }
     ]
 }
