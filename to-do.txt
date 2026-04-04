@@ -1,0 +1,3 @@
+1. align columns to the left
+2. add data types to the diagram
+3. add key selection to attribute creation
