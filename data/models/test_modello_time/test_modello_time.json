@@ -25,6 +25,16 @@
                     "scale": 11,
                     "source_mapping": "something.here",
                     "technical_name": "col_two"
+                },
+                {
+                    "attribute_id": "a15ba3df-580b-4b44-b14e-8a1ec5322544",
+                    "attribute_order": 3,
+                    "business_name": "new one",
+                    "data_type": "STRING",
+                    "definition": "",
+                    "key_type": null,
+                    "mandatory": true,
+                    "technical_name": "new_one"
                 }
             ],
             "business_name": "Entity Name",
@@ -93,13 +103,94 @@
             "entity_id": "8ca55e7d-c0f1-4ef1-8239-c15fd7e8c69e",
             "entity_type": "table",
             "technical_name": "jnhkm"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "919f79f7-6614-4abc-b9db-ab9042dc3ac5",
+                    "attribute_order": 1,
+                    "business_name": "afaf",
+                    "data_type": "STRING",
+                    "definition": "",
+                    "key_type": null,
+                    "technical_name": "afaf"
+                }
+            ],
+            "business_name": "threeafour",
+            "definition": "",
+            "entity_id": "afcc0082-264b-414f-8926-64f3dfc166bd",
+            "entity_type": "table",
+            "technical_name": "threeafour"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "c40e1243-b32d-4a4e-988f-e7ce1f5be64f",
+                    "attribute_order": 1,
+                    "business_name": "asfasf",
+                    "data_type": "STRING",
+                    "definition": "",
+                    "key_type": null,
+                    "technical_name": "asfasf"
+                }
+            ],
+            "business_name": "five",
+            "definition": "",
+            "entity_id": "6fe2d819-fe29-4441-84ee-12143eff7764",
+            "entity_type": "table",
+            "technical_name": "five"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "f88247eb-7ab2-4982-891f-743bc6fa89d5",
+                    "attribute_order": 1,
+                    "business_name": "sdfdfsdf",
+                    "data_type": "STRING",
+                    "definition": "",
+                    "key_type": null,
+                    "technical_name": "sdfdfsdf"
+                }
+            ],
+            "business_name": "regregergerg",
+            "definition": "",
+            "entity_id": "1fa91de1-a79b-4e8c-a4d9-3b40980e3f8f",
+            "entity_type": "table",
+            "technical_name": "regregergerg"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "1a14c8f9-815f-4bbe-95ac-bf65153fdf1a",
+                    "attribute_order": 1,
+                    "business_name": "sdfsdfs",
+                    "data_type": "STRING",
+                    "definition": "",
+                    "key_type": null,
+                    "technical_name": "sdfsdfs"
+                },
+                {
+                    "attribute_id": "58275c40-1f4b-4cfa-b536-1a0034483cd1",
+                    "business_name": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
+                    "technical_name": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
+                    "data_type": "STRING",
+                    "definition": "",
+                    "attribute_order": 2,
+                    "key_type": null
+                }
+            ],
+            "business_name": "sdfsewfefw",
+            "definition": "",
+            "entity_id": "47412b74-0e15-473b-a862-47153c34b629",
+            "entity_type": "table",
+            "technical_name": "sdfsewfefw"
         }
     ],
     "meta": {
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-03-28T22:14:38.461325Z",
+        "modified": "2026-04-08T22:55:10.333680Z",
         "name": "test modello time",
         "technical_name": "test_modello_time",
         "version": "1.0.0"

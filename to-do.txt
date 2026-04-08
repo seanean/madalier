@@ -1,5 +1,1 @@
-1. align columns to the left
-2. add data types to the diagram
-3. add key selection to attribute creation
 4. define meta fields one time to add to all entities (optional)
-5. technical model name should be translated from business model name

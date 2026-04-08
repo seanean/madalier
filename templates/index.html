@@ -131,8 +131,96 @@
         }
 
         #cy {
+            position: relative;
+            z-index: 0;
             width: 100%;
             height: 100%;
+        }
+
+        #cy-entity-header-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .cy-entity-header-label {
+            position: absolute;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', monospace;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 0.35rem;
+        }
+
+        #cy-attribute-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        /* Font size, gaps, padding, border, and grid columns are set in JS from rendered row height (zoom). */
+        .cy-attr-overlay-row {
+            position: absolute;
+            box-sizing: border-box;
+            display: grid;
+            align-items: center;
+            font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', monospace;
+            color: #333;
+            background: rgba(240, 240, 240, 0.9);
+            white-space: nowrap;
+        }
+
+        .cy-attr-cell-name {
+            overflow: visible;
+        }
+
+        .cy-attr-cell-key,
+        .cy-attr-cell-dt,
+        .cy-attr-cell-mand {
+            overflow: visible;
+        }
+
+        .cy-attr-cell-name.attr-key-primary,
+        .cy-attr-cell-name.attr-key-foreign,
+        .cy-attr-cell-name.attr-key-natural,
+        .cy-attr-cell-key.attr-key-primary,
+        .cy-attr-cell-key.attr-key-foreign,
+        .cy-attr-cell-key.attr-key-natural {
+            font-weight: 600;
+        }
+
+        .cy-attr-cell-name.attr-key-primary,
+        .cy-attr-cell-key.attr-key-primary {
+            color: #1a1a1a;
+        }
+
+        .cy-attr-cell-name.attr-key-foreign,
+        .cy-attr-cell-key.attr-key-foreign {
+            color: #c2410c;
+        }
+
+        .cy-attr-cell-name.attr-key-natural,
+        .cy-attr-cell-key.attr-key-natural {
+            color: #6b21a8;
+        }
+
+        .cy-attr-cell-dt {
+            color: #444;
+        }
+
+        .cy-attr-cell-mand {
+            color: #555;
+            text-align: right;
         }
 
         .splitter {
@@ -494,6 +582,8 @@
                     </div>
                     <div class="diagram-canvas-stack">
                         <div id="cy"></div>
+                        <div id="cy-entity-header-overlay" aria-hidden="true"></div>
+                        <div id="cy-attribute-overlay" aria-hidden="true"></div>
                     </div>
                 </div>
             </div>

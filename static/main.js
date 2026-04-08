@@ -15,6 +15,20 @@ const DIAGRAM_FONT_FAMILY =
 const DIAGRAM_LABEL_FONT = `${DIAGRAM_LABEL_FONT_PX}px ${DIAGRAM_FONT_FAMILY}`;
 
 const CARD_H_PADDING = 32;
+/** Extra px on diagram card width so HTML overlay tracks rarely lose to bbox/rounding vs canvas measure. */
+const OVERLAY_CARD_SLACK_PX = 8;
+/** Added once to attribute table inner width: canvas vs DOM + row border (border-box) mismatch. */
+const OVERLAY_TABLE_INNER_FUDGE_PX = 12;
+/** Per-column ceil padding so grid tracks are at least as wide as rendered text. */
+const OVERLAY_COLUMN_WIDTH_PAD_PX = 1;
+/** Horizontal gap between attribute table columns (px); keep in sync with overlay CSS `column-gap`. */
+const ATTR_TABLE_COL_GAP = 10;
+/** Total horizontal padding inside each overlay row (px, left + right). */
+const ATTR_TABLE_ROW_INNER_PAD = 12;
+/** Matches `node[type=attribute]` height in `cyStyle`; overlay scales font/gaps vs rendered row height. */
+const ATTR_OVERLAY_ROW_REF_PX = ROW_H;
+/** Floor for overlay font size (px) when zoomed far out. */
+const ATTR_OVERLAY_FONT_MIN_PX = 5;
 
 let _measureLabelCanvas;
 function measureLabelWidth(text) {
@@ -84,24 +98,82 @@ function attributeRowLabelForAttr(attr) {
     );
 }
 
-function measureAttributeRowLabelWidth(attr) {
-    const row = attributeRowLabelForAttr(attr);
-    const bold =
-        attr?.key_type === 'PRIMARY' ||
-        attr?.key_type === 'FOREIGN' ||
-        attr?.key_type === 'NATURAL';
-    return measureLabelWidthWithOptions(row, { bold });
+/** Sorted by attribute_order, matching `cyPositionAttributes` stacking. */
+function sortedAttributesForEntity(ent) {
+    const attrs = [...(ent?.attributes || [])];
+    attrs.sort((a, b) => Number(a.attribute_order) - Number(b.attribute_order));
+    return attrs;
+}
+
+function measureEntityAttributeColumnMaxes(ent) {
+    const attrs = sortedAttributesForEntity(ent);
+    let wName = 0;
+    let wKey = 0;
+    let wDt = 0;
+    let wMan = 0;
+    const padCol = () => OVERLAY_COLUMN_WIDTH_PAD_PX;
+    for (const a of attrs) {
+        const nameBold =
+            a.key_type === 'PRIMARY' ||
+            a.key_type === 'FOREIGN' ||
+            a.key_type === 'NATURAL';
+        wName = Math.max(
+            wName,
+            Math.ceil(measureLabelWidthWithOptions(displayNameForAttributeCard(a), { bold: nameBold })) +
+                padCol(),
+        );
+        const k = keyTypeAbbrev(a.key_type ?? null);
+        const keyBold =
+            a.key_type === 'PRIMARY' ||
+            a.key_type === 'FOREIGN' ||
+            a.key_type === 'NATURAL';
+        wKey = Math.max(
+            wKey,
+            Math.ceil(measureLabelWidthWithOptions(k, { bold: keyBold })) + padCol(),
+        );
+        wDt = Math.max(
+            wDt,
+            Math.ceil(measureLabelWidth(String(a.data_type ?? ''))) + padCol(),
+        );
+        wMan = Math.max(
+            wMan,
+            Math.ceil(measureLabelWidth(a.mandatory === true ? '*' : '')) + padCol(),
+        );
+    }
+    return { wName, wKey, wDt, wMan };
+}
+
+/** Minimum inner width (px) for the four-column attribute grid: columns + gaps + padding. */
+function computeAttributeTableMinInnerWidth(ent) {
+    const attrs = sortedAttributesForEntity(ent);
+    if (attrs.length === 0) return 0;
+    const { wName, wKey, wDt, wMan } = measureEntityAttributeColumnMaxes(ent);
+    return (
+        wName +
+        wKey +
+        wDt +
+        wMan +
+        3 * ATTR_TABLE_COL_GAP +
+        ATTR_TABLE_ROW_INNER_PAD +
+        OVERLAY_TABLE_INNER_FUDGE_PX
+    );
 }
 
 function computeCardWidthForEntity(ent) {
     const nameW = measureLabelWidth(displayNameForEntityCard(ent));
     const attrs = ent?.attributes || [];
-    let maxAttrW = 0;
-    for (const a of attrs) {
-        maxAttrW = Math.max(maxAttrW, measureAttributeRowLabelWidth(a));
+    if (attrs.length === 0) {
+        return Math.max(
+            MIN_CARD_WIDTH,
+            Math.ceil(nameW + CARD_H_PADDING + OVERLAY_CARD_SLACK_PX),
+        );
     }
-    const contentW = attrs.length === 0 ? nameW : Math.max(nameW, maxAttrW);
-    return Math.max(MIN_CARD_WIDTH, Math.ceil(contentW + CARD_H_PADDING));
+    const tableInner = computeAttributeTableMinInnerWidth(ent);
+    const contentW = Math.max(nameW, tableInner);
+    return Math.max(
+        MIN_CARD_WIDTH,
+        Math.ceil(contentW + CARD_H_PADDING + OVERLAY_CARD_SLACK_PX),
+    );
 }
 
 function syncEntityCardWidthInCy(entityId) {
@@ -134,6 +206,7 @@ let canonicalTechnicalName = null;
 let showTechnicalNamesInDiagram = false;
 let workspaceResizeInitialized = false;
 let cy;
+let diagramOverlayRaf = null;
 
 /** Matches [schemas/model.json](schemas/model.json) entity_type.enum */
 const SCHEMA_ENTITY_TYPES = ['view', 'table'];
@@ -919,6 +992,7 @@ function applyAttributeNodeDataInCy(attr) {
     const ent = findEntityContainingAttribute(attr.attribute_id);
     if (ent) syncEntityCardWidthInCy(ent.entity_id);
     else cy.style().update();
+    syncDiagramOverlaysAfterCardWidthChange();
 }
 
 function syncCyLabelsToDisplayMode() {
@@ -944,6 +1018,10 @@ function syncCyLabelsToDisplayMode() {
         syncEntityCardWidthInCy(ent.entity_id);
     }
     cy.style().update();
+    refreshAttributeOverlayContent();
+    refreshEntityHeaderOverlayContent();
+    syncAttributeOverlayPositions();
+    syncEntityHeaderOverlayPositions();
 }
 
 function syncShowTechnicalNamesButton() {
@@ -972,6 +1050,7 @@ function patchEntityLabelInCy(entityId, businessName) {
         hdr.data('businessName', String(biz ?? ''));
     }
     syncEntityCardWidthInCy(entityId);
+    syncDiagramOverlaysAfterCardWidthChange();
 }
 
 function patchAttributeLabelInCy(attributeId, businessName) {
@@ -1000,6 +1079,7 @@ function patchEntityTechnicalNameInCy(entityId, technicalName) {
         hdr.data('label', label);
     }
     syncEntityCardWidthInCy(entityId);
+    syncDiagramOverlaysAfterCardWidthChange();
 }
 
 function patchAttributeTechnicalNameInCy(attributeId, technicalName) {
@@ -1881,6 +1961,171 @@ function modelToNodesEdges() {
     }
 }
 
+/** Modifier class for PK/FK/NK (colors + semibold) on overlay name and key cells. */
+function attributeOverlayKeyTypeModifierClass(attr) {
+    const kt = attr?.key_type ?? null;
+    if (kt === 'PRIMARY') return 'attr-key-primary';
+    if (kt === 'FOREIGN') return 'attr-key-foreign';
+    if (kt === 'NATURAL') return 'attr-key-natural';
+    return '';
+}
+
+function refreshAttributeOverlayContent() {
+    const root = document.getElementById('cy-attribute-overlay');
+    if (!root) return;
+    root.replaceChildren();
+    if (!cy) return;
+    for (const ent of model.entities || []) {
+        const attrs = sortedAttributesForEntity(ent);
+        if (attrs.length === 0) continue;
+        const { wName, wKey, wDt, wMan } = measureEntityAttributeColumnMaxes(ent);
+        for (const attr of attrs) {
+            const row = document.createElement('div');
+            row.className = 'cy-attr-overlay-row';
+            row.dataset.attributeId = attr.attribute_id;
+            row.dataset.overlayWName = String(wName);
+            row.dataset.overlayWKey = String(wKey);
+            row.dataset.overlayWDt = String(wDt);
+            row.dataset.overlayWMan = String(wMan);
+
+            const keyMod = attributeOverlayKeyTypeModifierClass(attr);
+            const nameEl = document.createElement('span');
+            nameEl.className = keyMod ? `cy-attr-cell-name ${keyMod}` : 'cy-attr-cell-name';
+            nameEl.textContent = displayNameForAttributeCard(attr);
+
+            const keyEl = document.createElement('span');
+            keyEl.className = keyMod ? `cy-attr-cell-key ${keyMod}` : 'cy-attr-cell-key';
+            keyEl.textContent = keyTypeAbbrev(attr.key_type ?? null);
+
+            const dtEl = document.createElement('span');
+            dtEl.className = 'cy-attr-cell-dt';
+            dtEl.textContent = String(attr.data_type ?? '');
+
+            const manEl = document.createElement('span');
+            manEl.className = 'cy-attr-cell-mand';
+            manEl.textContent = attr.mandatory === true ? '*' : '';
+
+            row.append(nameEl, keyEl, dtEl, manEl);
+            root.appendChild(row);
+        }
+    }
+}
+
+function syncAttributeOverlayPositions() {
+    const root = document.getElementById('cy-attribute-overlay');
+    if (!root || !cy) return;
+    root.querySelectorAll('.cy-attr-overlay-row').forEach((row) => {
+        const id = row.dataset.attributeId;
+        if (!id) return;
+        const n = cy.getElementById(id);
+        if (n.empty()) return;
+        const bb = n.renderedBoundingBox({ includeLabels: false });
+        const bw = Number.isFinite(bb.w) ? bb.w : bb.x2 - bb.x1;
+        const bh = Number.isFinite(bb.h) ? bb.h : bb.y2 - bb.y1;
+        row.style.left = `${bb.x1}px`;
+        row.style.top = `${bb.y1}px`;
+        row.style.width = `${bw}px`;
+        row.style.height = `${bh}px`;
+
+        const bhSafe = bh > 0.5 ? bh : ATTR_OVERLAY_ROW_REF_PX;
+        const scale = bhSafe / ATTR_OVERLAY_ROW_REF_PX;
+        const fontPx = Math.max(ATTR_OVERLAY_FONT_MIN_PX, DIAGRAM_LABEL_FONT_PX * scale);
+        row.style.fontSize = `${fontPx}px`;
+        row.style.lineHeight = '1.15';
+        row.style.columnGap = `${ATTR_TABLE_COL_GAP * scale}px`;
+        row.style.paddingLeft = `${(ATTR_TABLE_ROW_INNER_PAD / 2) * scale}px`;
+        row.style.paddingRight = `${(ATTR_TABLE_ROW_INNER_PAD / 2) * scale}px`;
+        const borderW = Math.max(0.5, scale);
+        row.style.border = `${borderW}px solid #ccc`;
+
+        const wNameBase = parseFloat(row.dataset.overlayWName || '0') || 0;
+        const wk = parseFloat(row.dataset.overlayWKey || '0') || 0;
+        const wd = parseFloat(row.dataset.overlayWDt || '0') || 0;
+        const wm = parseFloat(row.dataset.overlayWMan || '0') || 0;
+
+        const cn = wNameBase * scale;
+        const ck = wk * scale;
+        const cd = wd * scale;
+        const cm = wm * scale;
+        if (cn + ck + cd + cm <= 0) {
+            row.style.gridTemplateColumns = '1fr 1fr 1fr 1fr';
+        } else {
+            /** Intrinsic column widths from the same measures as card width; extra row width goes to the name column. */
+            row.style.gridTemplateColumns = `minmax(${cn}px, 1fr) ${ck}px ${cd}px ${cm}px`;
+        }
+    });
+}
+
+function refreshEntityHeaderOverlayContent() {
+    const root = document.getElementById('cy-entity-header-overlay');
+    if (!root) return;
+    root.replaceChildren();
+    if (!cy) return;
+    for (const ent of model.entities || []) {
+        const el = document.createElement('div');
+        el.className = 'cy-entity-header-label';
+        el.dataset.entityId = ent.entity_id;
+        el.textContent = displayNameForEntityCard(ent);
+        root.appendChild(el);
+    }
+}
+
+function syncEntityHeaderOverlayPositions() {
+    const root = document.getElementById('cy-entity-header-overlay');
+    if (!root || !cy) return;
+    root.querySelectorAll('.cy-entity-header-label').forEach((el) => {
+        const entityId = el.dataset.entityId;
+        if (!entityId) return;
+        const n = cy.getElementById(`${entityId}_hdr`);
+        if (n.empty()) return;
+        const bb = n.renderedBoundingBox({ includeLabels: false });
+        const bw = Number.isFinite(bb.w) ? bb.w : bb.x2 - bb.x1;
+        const bh = Number.isFinite(bb.h) ? bb.h : bb.y2 - bb.y1;
+        el.style.left = `${bb.x1}px`;
+        el.style.top = `${bb.y1}px`;
+        el.style.width = `${bw}px`;
+        el.style.height = `${bh}px`;
+        const bhSafe = bh > 0.5 ? bh : HEADER_H;
+        const scale = bhSafe / HEADER_H;
+        const fontPx = Math.max(ATTR_OVERLAY_FONT_MIN_PX, DIAGRAM_LABEL_FONT_PX * scale);
+        el.style.fontSize = `${fontPx}px`;
+        el.style.lineHeight = `${fontPx * 1.15}px`;
+    });
+}
+
+function scheduleDiagramOverlaysSync() {
+    if (diagramOverlayRaf != null) return;
+    diagramOverlayRaf = requestAnimationFrame(() => {
+        diagramOverlayRaf = null;
+        syncAttributeOverlayPositions();
+        syncEntityHeaderOverlayPositions();
+    });
+}
+
+function clearAttributeOverlay() {
+    const root = document.getElementById('cy-attribute-overlay');
+    if (root) root.replaceChildren();
+}
+
+function clearEntityHeaderOverlay() {
+    const root = document.getElementById('cy-entity-header-overlay');
+    if (root) root.replaceChildren();
+}
+
+function clearDiagramOverlays() {
+    clearAttributeOverlay();
+    clearEntityHeaderOverlay();
+}
+
+function syncDiagramOverlaysAfterCardWidthChange() {
+    refreshAttributeOverlayContent();
+    refreshEntityHeaderOverlayContent();
+    requestAnimationFrame(() => {
+        syncAttributeOverlayPositions();
+        syncEntityHeaderOverlayPositions();
+    });
+}
+
 function renderCy() {
     syncEntityPositionsMapFromCy();
     const forceFitViewport = fitCyViewportAfterNextRender;
@@ -1898,6 +2143,7 @@ function renderCy() {
         cy.destroy();
         cy = undefined;
     }
+    clearDiagramOverlays();
     cy = cytoscape({
         container: document.getElementById('cy'),
         elements: {
@@ -1944,6 +2190,7 @@ function renderCy() {
     cy.on('dragfree', 'node[type = "entity"]', (evt) => {
         if (evt.target.data('type') === 'entity') {
             cyPositionAttributes(evt.target);
+            scheduleDiagramOverlaysSync();
             saveLayout();
         }
     });
@@ -2026,10 +2273,16 @@ function renderCy() {
             } catch {
                 /* ignore */
             }
+            refreshAttributeOverlayContent();
+            refreshEntityHeaderOverlayContent();
+            syncAttributeOverlayPositions();
+            syncEntityHeaderOverlayPositions();
         });
     }
 
     syncCyLabelsToDisplayMode();
+
+    cy.on('pan zoom resize render', scheduleDiagramOverlaysSync);
 
     if (!workspaceResizeInitialized) {
         initWorkspaceResize();
@@ -2106,7 +2359,10 @@ function initWorkspaceResize() {
     });
 
     const ro = new ResizeObserver(() => {
-        if (cy) cy.resize();
+        if (cy) {
+            cy.resize();
+            scheduleDiagramOverlaysSync();
+        }
     });
     ro.observe(diagramPanel);
 }
@@ -2151,6 +2407,7 @@ function stabilizeStoredEntityPositionsInCy() {
         });
     });
     cy.nodes('[type = "entity"]').forEach((ent) => cyPositionAttributes(ent));
+    scheduleDiagramOverlaysSync();
 }
 
 function syncEntityAttributeOrderInCy(entityId) {
@@ -2174,6 +2431,7 @@ function syncEntityAttributeOrderInCy(entityId) {
         entCy.position(p);
     }
     cyPositionAttributes(entCy);
+    scheduleDiagramOverlaysSync();
 }
 
 function saveLayout() {
@@ -2228,46 +2486,22 @@ const cyStyle = [
         selector: 'node[type = "attribute"]',
         style: {
             'shape': 'rectangle',
-            'label': 'data(label)',
+            'label': '',
             'width': cyNodeCardWidth,
             'height': `${ROW_H}px`,
             'text-valign': 'center',
-            'text-halign': 'center',
-            'background-color': '#f0f0f0',
-            'border-color': '#ccc',
-            'border-width': 1,
-            'font-family': DIAGRAM_FONT_FAMILY,
-            'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
-            'color': '#333',
-            'font-weight': 'normal',
-        }
-    },
-    {
-        selector: 'node[type = "attribute"][keyType = "PRIMARY"]',
-        style: {
-            'font-weight': 'bold',
-            'color': '#1a1a1a',
-        }
-    },
-    {
-        selector: 'node[type = "attribute"][keyType = "FOREIGN"]',
-        style: {
-            'font-weight': 'bold',
-            'color': '#c2410c',
-        }
-    },
-    {
-        selector: 'node[type = "attribute"][keyType = "NATURAL"]',
-        style: {
-            'font-weight': 'bold',
-            'color': '#6b21a8',
+            'text-halign': 'left',
+            'background-opacity': 0,
+            'border-opacity': 0,
+            'border-width': 0,
+            'text-opacity': 0,
         }
     },
     {
         selector: 'node[type = "entity-header"]',
         style: {
             'shape': 'rectangle',
-            'label': 'data(label)',
+            'label': '',
             'events': 'no',
             'text-valign': 'center',
             'text-halign': 'center',
@@ -2276,6 +2510,7 @@ const cyStyle = [
             'height': `${HEADER_H}px`,
             'font-family': DIAGRAM_FONT_FAMILY,
             'font-size': `${DIAGRAM_LABEL_FONT_PX}px`,
+            'text-opacity': 0,
         }
     },
     {
