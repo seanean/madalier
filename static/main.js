@@ -2265,6 +2265,20 @@ function initAddAttributeDataTypeSelect() {
     }
 }
 
+function syncAddAttributeDecimalFieldsVisibility() {
+    const sel = document.getElementById('add-attribute-data-type');
+    const wrap = document.getElementById('add-attribute-decimal-fields');
+    if (!wrap) return;
+    const isDec = sel?.value === 'DECIMAL';
+    wrap.hidden = !isDec;
+    if (!isDec) {
+        const p = document.getElementById('add-attribute-precision');
+        const s = document.getElementById('add-attribute-scale');
+        if (p) p.value = '';
+        if (s) s.value = '';
+    }
+}
+
 function resetAddEntityForm() {
     document.getElementById('add-entity-form')?.reset();
 }
@@ -2331,6 +2345,7 @@ function resetAddAttributeForm() {
     const form = document.getElementById('add-attribute-form');
     form?.reset();
     initAddAttributeDataTypeSelect();
+    syncAddAttributeDecimalFieldsVisibility();
 }
 
 function openAddAttributeDialog() {
@@ -2346,6 +2361,7 @@ function openAddAttributeDialog() {
     const bizInp = document.getElementById('add-attribute-business-name');
     if (bizInp) bizInp.oninput = () => syncAddAttributeTechnicalPreview();
     syncAddAttributeTechnicalPreview();
+    syncAddAttributeDecimalFieldsVisibility();
     document.getElementById('add-attribute-dialog')?.showModal();
     queueMicrotask(() => document.getElementById('add-attribute-business-name')?.focus());
 }
@@ -2361,6 +2377,7 @@ function submitAddAttribute(ev) {
     const businessName = document.getElementById('add-attribute-business-name')?.value?.trim() ?? '';
     const technicalName = derivedAttributeTechnicalNameForBusiness(businessName, ent, undefined);
     const dataType = document.getElementById('add-attribute-data-type')?.value ?? '';
+    const keyTypeRaw = document.getElementById('add-attribute-key-type')?.value ?? '';
     const definition = document.getElementById('add-attribute-definition')?.value?.trim() ?? '';
     const mandatory = document.getElementById('add-attribute-mandatory')?.checked === true;
     if (!businessName || !dataType) {
@@ -2373,6 +2390,11 @@ function submitAddAttribute(ev) {
     }
     if (!SCHEMA_DATA_TYPES.includes(dataType)) {
         alert('Invalid data type.');
+        return;
+    }
+    const keyType = keyTypeRaw === '' ? null : keyTypeRaw;
+    if (keyType !== null && !SCHEMA_KEY_TYPES.includes(keyType)) {
+        alert('Invalid key type.');
         return;
     }
     const attrs = ent.attributes || [];
@@ -2388,9 +2410,15 @@ function submitAddAttribute(ev) {
         data_type: dataType,
         definition,
         attribute_order: maxOrder + 1,
-        key_type: null,
+        key_type: keyType,
     };
     if (mandatory) newAttr.mandatory = true;
+    if (dataType === 'DECIMAL') {
+        const precRaw = document.getElementById('add-attribute-precision')?.value ?? '';
+        const scaleRaw = document.getElementById('add-attribute-scale')?.value ?? '';
+        parseOptionalIntField(newAttr, 'precision', precRaw);
+        parseOptionalIntField(newAttr, 'scale', scaleRaw);
+    }
     if (!ent.attributes) ent.attributes = [];
     ent.attributes.push(newAttr);
 
@@ -2871,6 +2899,8 @@ async function exportModelDdl() {
 document.getElementById('export-ddl-btn')?.addEventListener('click', () => void exportModelDdl());
 
 initAddAttributeDataTypeSelect();
+syncAddAttributeDecimalFieldsVisibility();
+document.getElementById('add-attribute-data-type')?.addEventListener('change', syncAddAttributeDecimalFieldsVisibility);
 syncAddRelationshipButtonState();
 syncRemoveSelectedButtonState();
 syncShowTechnicalNamesButton();

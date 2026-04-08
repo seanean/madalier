@@ -581,6 +581,21 @@
                 aria-readonly="true">
             <label for="add-attribute-data-type">Data type</label>
             <select id="add-attribute-data-type" name="data_type" required></select>
+            <div id="add-attribute-decimal-fields" hidden>
+                <label for="add-attribute-precision">Precision</label>
+                <input type="text" id="add-attribute-precision" name="precision" inputmode="numeric"
+                    autocomplete="off" maxlength="10" placeholder="Total digits (optional)">
+                <label for="add-attribute-scale">Scale</label>
+                <input type="text" id="add-attribute-scale" name="scale" inputmode="numeric" autocomplete="off"
+                    maxlength="10" placeholder="Decimal places (optional)">
+            </div>
+            <label for="add-attribute-key-type">Key type</label>
+            <select id="add-attribute-key-type" name="key_type">
+                <option value="" selected>(none)</option>
+                <option value="PRIMARY">PRIMARY</option>
+                <option value="FOREIGN">FOREIGN</option>
+                <option value="NATURAL">NATURAL</option>
+            </select>
             <label for="add-attribute-definition">Definition</label>
             <textarea id="add-attribute-definition" name="definition" maxlength="4000"></textarea>
             <label class="checkbox-row"><input type="checkbox" id="add-attribute-mandatory" name="mandatory"> Mandatory</label>
