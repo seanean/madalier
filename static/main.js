@@ -204,6 +204,9 @@ async function loadNamingConfig() {
         }
         namingConfig = data;
         if (!Array.isArray(namingConfig.word_mappings)) namingConfig.word_mappings = [];
+        if (document.getElementById('new-model-dialog')?.open) {
+            syncNewModelTechnicalPreview();
+        }
     } catch (e) {
         console.error(e);
         namingConfig = defaultNamingConfig();
@@ -401,6 +404,43 @@ function derivedAttributeTechnicalNameForBusiness(businessName, entity, excludeA
     return ensureUniqueAttributeTechnicalName(base, excludeAttributeId, entity);
 }
 
+/**
+ * Turn a technical string produced by applyNamingConvention (any configured style) into
+ * meta.technical_name / on-disk stem: ASCII lower_snake_case matching TECHNICAL_NAME_RE.
+ */
+function namingConventionOutputToModelStem(s) {
+    if (typeof s !== 'string' || !s.trim()) return null;
+    let t = s.trim();
+    t = t.replace(/([a-z\d])([A-Z])/g, '$1_$2');
+    t = t.replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
+    t = t.replace(/-/g, '_');
+    t = t.toLowerCase();
+    try {
+        t = t.normalize('NFKD').replace(/\p{M}+/gu, '');
+    } catch {
+        /* ignore if unsupported */
+    }
+    t = t.replace(/[^a-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (!t) return null;
+    if (!/^[a-z]/.test(t)) {
+        t = `x_${t}`.replace(/[^a-z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    }
+    if (!TECHNICAL_NAME_RE.test(t)) {
+        t = t.replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    }
+    if (!/^[a-z]/.test(t)) return null;
+    return TECHNICAL_NAME_RE.test(t) ? t : null;
+}
+
+/**
+ * Model folder / meta.technical_name from display name: same segments and naming_convention as
+ * entities/attributes (word_mappings + style), then coerced to API-safe lower_snake_case ASCII.
+ */
+function deriveModelTechnicalNameFromDisplayName(displayName) {
+    const styled = deriveTechnicalNameFromBusiness(displayName);
+    return namingConventionOutputToModelStem(styled);
+}
+
 function syncAddEntityTechnicalPreview() {
     const biz = document.getElementById('add-entity-business-name')?.value ?? '';
     const techEl = document.getElementById('add-entity-technical-name');
@@ -418,6 +458,19 @@ function syncAddAttributeTechnicalPreview() {
         return;
     }
     techEl.value = derivedAttributeTechnicalNameForBusiness(biz.trim(), ent, undefined);
+}
+
+function syncNewModelTechnicalPreview() {
+    const nameInput = document.getElementById('new-model-name');
+    const techEl = document.getElementById('new-model-technical-name');
+    if (!techEl) return;
+    const name = sanitizeMetaModelName(nameInput?.value ?? '').trim();
+    if (!name) {
+        techEl.value = '';
+        return;
+    }
+    const stem = deriveModelTechnicalNameFromDisplayName(name);
+    techEl.value = stem ?? '';
 }
 
 /** Letters, numbers, spaces, and underscores only (Unicode letters and numbers). */
@@ -2624,6 +2677,7 @@ function resetNewModelForm() {
 
 function openNewModelDialog() {
     resetNewModelForm();
+    syncNewModelTechnicalPreview();
     const dialog = document.getElementById('new-model-dialog');
     dialog?.showModal();
     queueMicrotask(() => document.getElementById('new-model-name')?.focus());
@@ -2644,14 +2698,10 @@ async function submitNewModel(ev) {
         alert('Enter a name.');
         return;
     }
-    const technical_name = technicalInput.value.trim();
-    if (!technical_name) {
-        alert('Enter a technical name.');
-        return;
-    }
-    if (!TECHNICAL_NAME_RE.test(technical_name)) {
+    const technical_name = deriveModelTechnicalNameFromDisplayName(name);
+    if (!technical_name || !TECHNICAL_NAME_RE.test(technical_name)) {
         alert(
-            'Technical name must be lower_snake_case: start with a letter, then letters, digits, or underscores only.',
+            'This name does not produce a valid technical id for the model folder. Use a name that maps to letters and numbers (after naming config and ASCII normalization), starting with a letter — or adjust the naming config.',
         );
         return;
     }
@@ -2694,6 +2744,7 @@ async function submitNewModel(ev) {
 document.getElementById('new-model-btn')?.addEventListener('click', () => openNewModelDialog());
 document.getElementById('new-model-name')?.addEventListener('input', (ev) => {
     applyMetaModelNameSanitizeToInput(ev.target);
+    syncNewModelTechnicalPreview();
 });
 document.getElementById('new-model-form')?.addEventListener('submit', (ev) => submitNewModel(ev));
 document.getElementById('new-model-cancel')?.addEventListener('click', () => {

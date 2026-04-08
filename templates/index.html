@@ -525,12 +525,11 @@
             <input type="text" id="new-model-name" name="name" required autocomplete="off" maxlength="500"
                 placeholder="e.g. Customer warehouse"
                 title="Letters, numbers, spaces, and underscores only">
-            <label for="new-model-technical-name">Technical name</label>
-            <input type="text" id="new-model-technical-name" name="technical_name" required autocomplete="off"
-                placeholder="e.g. customer_warehouse"
-                pattern="[a-z][a-z0-9_]*" maxlength="200"
-                title="lower_snake_case: start with a letter; then letters, digits, underscores">
-            <p class="field-hint"><code>meta.name</code> is the label above; <code>meta.technical_name</code> is the id and folder name under <code>data/models/&lt;technical_name&gt;/</code> (<code>&lt;technical_name&gt;.json</code>, <code>layout_&lt;technical_name&gt;.json</code>, CSV/PNG alongside). Edits use <code>temp_&lt;technical_name&gt;</code> (and matching layout file) until you save. After creation, changing the name in the Details panel derives a new technical name and renames working files if that id is valid and not already taken; otherwise you are prompted to adjust the name. Save to canonical replaces the old file when the stem changed.</p>
+            <label for="new-model-technical-name">Technical name (derived)</label>
+            <input type="text" id="new-model-technical-name" name="technical_name" readonly autocomplete="off"
+                maxlength="200" aria-readonly="true"
+                title="Derived from the name above using naming config (word mappings and convention), then normalized to lower_snake_case for the model folder">
+            <p class="field-hint">The name is the label you work with. The technical id is derived from it using the naming config (same idea as entities), then normalized to ASCII <code>lower_snake_case</code> for the folder under <code>data/models/</code>.</p>
             <label for="new-model-version">Version</label>
             <input type="text" id="new-model-version" name="version" required autocomplete="off" maxlength="100"
                 placeholder="1.0.0" value="1.0.0">
