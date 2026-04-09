@@ -132,9 +132,10 @@ function measureEntityAttributeColumnMaxes(ent) {
     const padCol = () => OVERLAY_COLUMN_WIDTH_PAD_PX;
     for (const a of attrs) {
         const nameBold =
-            a.key_type === 'PRIMARY' ||
-            a.key_type === 'FOREIGN' ||
-            a.key_type === 'NATURAL';
+            a.is_meta !== true &&
+            (a.key_type === 'PRIMARY' ||
+                a.key_type === 'FOREIGN' ||
+                a.key_type === 'NATURAL');
         wName = Math.max(
             wName,
             Math.ceil(measureLabelWidthWithOptions(displayNameForAttributeCard(a), { bold: nameBold })) +
@@ -142,9 +143,10 @@ function measureEntityAttributeColumnMaxes(ent) {
         );
         const k = keyTypeAbbrev(a.key_type ?? null);
         const keyBold =
-            a.key_type === 'PRIMARY' ||
-            a.key_type === 'FOREIGN' ||
-            a.key_type === 'NATURAL';
+            a.is_meta !== true &&
+            (a.key_type === 'PRIMARY' ||
+                a.key_type === 'FOREIGN' ||
+                a.key_type === 'NATURAL');
         wKey = Math.max(
             wKey,
             Math.ceil(measureLabelWidthWithOptions(k, { bold: keyBold })) + padCol(),
@@ -306,6 +308,492 @@ async function loadNamingConfig() {
         console.error(e);
         namingConfig = defaultNamingConfig();
     }
+}
+
+// --- Meta fields: default + per-model template (/api/*_meta_config) ---
+
+let defaultMetaConfigCache = { fields: [] };
+let effectiveMetaConfigState = { uses_default: true, config: { fields: [] } };
+/** Editable field list while the manage-meta dialog is open */
+let manageMetaDraft = [];
+
+async function loadDefaultMetaConfig() {
+    try {
+        const res = await fetch('/api/default_meta_config');
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        if (data && Array.isArray(data.fields)) {
+            defaultMetaConfigCache = data;
+        }
+    } catch (e) {
+        console.error(e);
+        defaultMetaConfigCache = { fields: [] };
+    }
+}
+
+async function refreshEffectiveMetaConfig() {
+    if (!canonicalTechnicalName) {
+        effectiveMetaConfigState = { uses_default: true, config: { fields: [...(defaultMetaConfigCache.fields || [])] } };
+        return;
+    }
+    try {
+        const res = await fetch('/api/model_meta_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ technical_name: canonicalTechnicalName, working: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        effectiveMetaConfigState = {
+            uses_default: data.uses_default === true,
+            config: data.config && Array.isArray(data.config.fields) ? data.config : { fields: [] },
+        };
+    } catch (e) {
+        console.error(e);
+        effectiveMetaConfigState = {
+            uses_default: true,
+            config: { fields: [...(defaultMetaConfigCache.fields || [])] },
+        };
+    }
+}
+
+function syncMetaFieldsButtons() {
+    const t = document.getElementById('toggle-meta-fields-btn');
+    const m = document.getElementById('manage-meta-fields-btn');
+    const open = !!canonicalTechnicalName;
+    if (t) {
+        t.disabled = !open;
+        t.setAttribute('aria-pressed', model.meta_fields_enabled === true ? 'true' : 'false');
+    }
+    if (m) m.disabled = !open;
+}
+
+function maxAttributeOrderOnEntity(ent) {
+    let maxOrder = 0;
+    for (const a of ent.attributes || []) {
+        const o = a.attribute_order;
+        if (typeof o === 'number' && o > maxOrder) maxOrder = o;
+    }
+    return maxOrder;
+}
+
+function metaTemplateFieldToAttribute(field, order) {
+    const attr = {
+        attribute_id: crypto.randomUUID(),
+        business_name: field.business_name,
+        technical_name: field.technical_name,
+        data_type: field.data_type,
+        attribute_order: order,
+        is_meta: true,
+        key_type: null,
+    };
+    if (field.mandatory === true) attr.mandatory = true;
+    if (field.definition) attr.definition = field.definition;
+    if (field.source_mapping) attr.source_mapping = field.source_mapping;
+    if (field.data_type === 'DECIMAL') {
+        if (typeof field.precision === 'number') attr.precision = field.precision;
+        if (typeof field.scale === 'number') attr.scale = field.scale;
+    }
+    return attr;
+}
+
+/** Add missing meta attributes from the effective template; returns an error message or null. */
+function applyMetaFieldsToTable(ent) {
+    const fields = effectiveMetaConfigState.config?.fields || [];
+    if (ent.entity_type !== 'table') return null;
+    if (!ent.attributes) ent.attributes = [];
+    for (const f of fields) {
+        const existing = ent.attributes.find((a) => a.technical_name === f.technical_name);
+        if (existing) {
+            if (existing.is_meta === true) continue;
+            return `Table "${ent.business_name || ent.technical_name}" already has a non-meta attribute "${f.technical_name}". Remove or rename it before enabling meta fields.`;
+        }
+        const order = maxAttributeOrderOnEntity(ent) + 1;
+        ent.attributes.push(metaTemplateFieldToAttribute(f, order));
+    }
+    return null;
+}
+
+function removeAllMetaAttributesFromModel() {
+    const removeIds = new Set();
+    for (const ent of model.entities || []) {
+        for (const a of ent.attributes || []) {
+            if (a.is_meta === true) removeIds.add(a.attribute_id);
+        }
+        ent.attributes = (ent.attributes || []).filter((a) => a.is_meta !== true);
+    }
+    model.relationships = (model.relationships || []).filter(
+        (r) => !removeIds.has(r.parent_attribute_id) && !removeIds.has(r.child_attribute_id),
+    );
+}
+
+function syncMetaTemplateToAllTables() {
+    const fields = effectiveMetaConfigState.config?.fields || [];
+    const templateTns = new Set(fields.map((f) => f.technical_name));
+    for (const ent of model.entities || []) {
+        if (ent.entity_type !== 'table') continue;
+        let attrs = ent.attributes || [];
+        const removeIds = new Set();
+        for (const a of attrs) {
+            if (a.is_meta === true && !templateTns.has(a.technical_name)) {
+                removeIds.add(a.attribute_id);
+            }
+        }
+        if (removeIds.size > 0) {
+            attrs = attrs.filter((a) => !removeIds.has(a.attribute_id));
+            ent.attributes = attrs;
+            model.relationships = (model.relationships || []).filter(
+                (r) => !removeIds.has(r.parent_attribute_id) && !removeIds.has(r.child_attribute_id),
+            );
+        }
+        attrs = ent.attributes || [];
+        for (const f of fields) {
+            const attr = attrs.find((a) => a.technical_name === f.technical_name && a.is_meta === true);
+            if (attr) {
+                attr.business_name = f.business_name;
+                attr.data_type = f.data_type;
+                if (f.mandatory === true) attr.mandatory = true;
+                else delete attr.mandatory;
+                if (f.definition) attr.definition = f.definition;
+                else delete attr.definition;
+                if (f.source_mapping) attr.source_mapping = f.source_mapping;
+                else delete attr.source_mapping;
+                clearPrecisionScaleUnlessDecimal(attr);
+                if (f.data_type === 'DECIMAL') {
+                    if (typeof f.precision === 'number') attr.precision = f.precision;
+                    else delete attr.precision;
+                    if (typeof f.scale === 'number') attr.scale = f.scale;
+                    else delete attr.scale;
+                }
+                attr.key_type = null;
+            }
+        }
+        const err = applyMetaFieldsToTable(ent);
+        if (err) return err;
+    }
+    return null;
+}
+
+function ensureMetaFieldsAfterLoad() {
+    if (model.meta_fields_enabled !== true) return;
+    const err = syncMetaTemplateToAllTables();
+    if (err) {
+        console.error(err);
+        alert(err);
+    }
+}
+
+function countRelatableAttributes() {
+    let n = 0;
+    for (const ent of model.entities || []) {
+        for (const a of ent.attributes || []) {
+            if (a.is_meta !== true) n += 1;
+        }
+    }
+    return n;
+}
+
+function onToggleMetaFieldsClick() {
+    if (!canonicalTechnicalName) {
+        alert('Open or create a model first.');
+        return;
+    }
+    const enabling = model.meta_fields_enabled !== true;
+    if (enabling) {
+        for (const ent of model.entities || []) {
+            if (ent.entity_type === 'table') {
+                const err = applyMetaFieldsToTable(ent);
+                if (err) {
+                    alert(err);
+                    return;
+                }
+            }
+        }
+        model.meta_fields_enabled = true;
+    } else {
+        model.meta_fields_enabled = false;
+        removeAllMetaAttributesFromModel();
+    }
+    modelToNodesEdges();
+    renderCy();
+    syncMetaFieldsButtons();
+    syncAddRelationshipButtonState();
+    schedulePersistWorkingModel();
+    saveLayout();
+}
+
+function cloneMetaFieldRow(f) {
+    return {
+        business_name: f.business_name ?? '',
+        technical_name: f.technical_name ?? '',
+        data_type: f.data_type ?? 'STRING',
+        mandatory: f.mandatory === true,
+        precision: typeof f.precision === 'number' ? f.precision : undefined,
+        scale: typeof f.scale === 'number' ? f.scale : undefined,
+        definition: f.definition ?? '',
+        source_mapping: f.source_mapping ?? '',
+    };
+}
+
+function renderManageMetaFieldsList() {
+    const list = document.getElementById('manage-meta-fields-list');
+    if (!list) return;
+    list.replaceChildren();
+    manageMetaDraft.forEach((field, idx) => {
+        const row = document.createElement('div');
+        row.className = 'manage-meta-field-row';
+        row.dataset.index = String(idx);
+
+        const labBiz = document.createElement('label');
+        labBiz.textContent = 'Business name';
+        const inpBiz = document.createElement('input');
+        inpBiz.type = 'text';
+        inpBiz.value = field.business_name;
+        inpBiz.autocomplete = 'off';
+        inpBiz.addEventListener('input', () => {
+            manageMetaDraft[idx].business_name = inpBiz.value;
+        });
+
+        const labTech = document.createElement('label');
+        labTech.textContent = 'Technical name';
+        const inpTech = document.createElement('input');
+        inpTech.type = 'text';
+        inpTech.value = field.technical_name;
+        inpTech.autocomplete = 'off';
+        inpTech.addEventListener('input', () => {
+            manageMetaDraft[idx].technical_name = inpTech.value.trim();
+        });
+
+        const labDt = document.createElement('label');
+        labDt.textContent = 'Data type';
+        const selDt = document.createElement('select');
+        for (const dt of SCHEMA_DATA_TYPES) {
+            const opt = document.createElement('option');
+            opt.value = dt;
+            opt.textContent = dt;
+            if (dt === field.data_type) opt.selected = true;
+            selDt.appendChild(opt);
+        }
+        selDt.addEventListener('change', () => {
+            manageMetaDraft[idx].data_type = selDt.value;
+            renderManageMetaFieldsList();
+        });
+
+        const labMan = document.createElement('label');
+        labMan.className = 'checkbox-row';
+        const cbMan = document.createElement('input');
+        cbMan.type = 'checkbox';
+        cbMan.checked = field.mandatory === true;
+        labMan.appendChild(cbMan);
+        labMan.appendChild(document.createTextNode(' Mandatory'));
+        cbMan.addEventListener('change', () => {
+            manageMetaDraft[idx].mandatory = cbMan.checked;
+        });
+
+        const labDef = document.createElement('label');
+        labDef.textContent = 'Definition';
+        const taDef = document.createElement('textarea');
+        taDef.rows = 2;
+        taDef.value = field.definition ?? '';
+        taDef.addEventListener('input', () => {
+            manageMetaDraft[idx].definition = taDef.value;
+        });
+
+        const labMap = document.createElement('label');
+        labMap.textContent = 'Source mapping';
+        const inpMap = document.createElement('input');
+        inpMap.type = 'text';
+        inpMap.value = field.source_mapping ?? '';
+        inpMap.addEventListener('input', () => {
+            manageMetaDraft[idx].source_mapping = inpMap.value;
+        });
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'manage-meta-field-actions';
+        const btnUp = document.createElement('button');
+        btnUp.type = 'button';
+        btnUp.textContent = 'Up';
+        btnUp.disabled = idx <= 0;
+        btnUp.addEventListener('click', () => {
+            if (idx <= 0) return;
+            const t = manageMetaDraft[idx - 1];
+            manageMetaDraft[idx - 1] = manageMetaDraft[idx];
+            manageMetaDraft[idx] = t;
+            renderManageMetaFieldsList();
+        });
+        const btnDn = document.createElement('button');
+        btnDn.type = 'button';
+        btnDn.textContent = 'Down';
+        btnDn.disabled = idx >= manageMetaDraft.length - 1;
+        btnDn.addEventListener('click', () => {
+            if (idx >= manageMetaDraft.length - 1) return;
+            const t = manageMetaDraft[idx + 1];
+            manageMetaDraft[idx + 1] = manageMetaDraft[idx];
+            manageMetaDraft[idx] = t;
+            renderManageMetaFieldsList();
+        });
+        const btnRm = document.createElement('button');
+        btnRm.type = 'button';
+        btnRm.textContent = 'Remove';
+        btnRm.addEventListener('click', () => {
+            manageMetaDraft.splice(idx, 1);
+            renderManageMetaFieldsList();
+        });
+        btnRow.append(btnUp, btnDn, btnRm);
+
+        row.append(
+            labBiz,
+            inpBiz,
+            labTech,
+            inpTech,
+            labDt,
+            selDt,
+            labMan,
+            labDef,
+            taDef,
+            labMap,
+            inpMap,
+            btnRow,
+        );
+
+        if (field.data_type === 'DECIMAL') {
+            const labP = document.createElement('label');
+            labP.textContent = 'Precision';
+            const inpP = document.createElement('input');
+            inpP.type = 'text';
+            inpP.inputMode = 'numeric';
+            inpP.value =
+                field.precision !== undefined && field.precision !== null ? String(field.precision) : '';
+            inpP.addEventListener('input', () => {
+                parseOptionalIntField(manageMetaDraft[idx], 'precision', inpP.value);
+            });
+            const labS = document.createElement('label');
+            labS.textContent = 'Scale';
+            const inpS = document.createElement('input');
+            inpS.type = 'text';
+            inpS.inputMode = 'numeric';
+            inpS.value = field.scale !== undefined && field.scale !== null ? String(field.scale) : '';
+            inpS.addEventListener('input', () => {
+                parseOptionalIntField(manageMetaDraft[idx], 'scale', inpS.value);
+            });
+            row.append(labP, inpP, labS, inpS);
+        }
+
+        list.appendChild(row);
+    });
+}
+
+function addEmptyManageMetaField() {
+    manageMetaDraft.push({
+        business_name: '',
+        technical_name: '',
+        data_type: 'STRING',
+        mandatory: false,
+        definition: '',
+        source_mapping: '',
+    });
+    renderManageMetaFieldsList();
+}
+
+function openManageMetaFieldsDialog() {
+    if (!canonicalTechnicalName) {
+        alert('Open or create a model first.');
+        return;
+    }
+    const fields = effectiveMetaConfigState.config?.fields || [];
+    manageMetaDraft = fields.map((f) => cloneMetaFieldRow(f));
+    renderManageMetaFieldsList();
+    document.getElementById('manage-meta-fields-dialog')?.showModal();
+}
+
+function validateManageMetaDraftForSave() {
+    const seen = new Set();
+    for (const f of manageMetaDraft) {
+        const tn = (f.technical_name || '').trim();
+        const bn = (f.business_name || '').trim();
+        if (!bn) return 'Each meta field needs a business name.';
+        if (!tn || !TECHNICAL_NAME_RE.test(tn)) return `Invalid technical name: "${tn || '(empty)'}"`;
+        if (seen.has(tn)) return `Duplicate technical name: ${tn}`;
+        seen.add(tn);
+        if (!SCHEMA_DATA_TYPES.includes(f.data_type)) return `Invalid data type for ${tn}`;
+    }
+    return null;
+}
+
+async function saveManageMetaFieldsFromDialog() {
+    const err = validateManageMetaDraftForSave();
+    if (err) {
+        alert(err);
+        return false;
+    }
+    const config = {
+        fields: manageMetaDraft.map((f) => {
+            const o = {
+                business_name: f.business_name.trim(),
+                technical_name: f.technical_name.trim(),
+                data_type: f.data_type,
+            };
+            if (f.mandatory === true) o.mandatory = true;
+            if (f.definition && f.definition.trim()) o.definition = f.definition.trim();
+            if (f.source_mapping && f.source_mapping.trim()) o.source_mapping = f.source_mapping.trim();
+            if (f.data_type === 'DECIMAL') {
+                if (typeof f.precision === 'number') o.precision = f.precision;
+                if (typeof f.scale === 'number') o.scale = f.scale;
+            }
+            return o;
+        }),
+    };
+    const res = await fetch('/api/save_model_meta_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ technical_name: canonicalTechnicalName, config }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.error || res.statusText || 'Could not save meta config.');
+        return false;
+    }
+    await refreshEffectiveMetaConfig();
+    if (model.meta_fields_enabled === true) {
+        const syncErr = syncMetaTemplateToAllTables();
+        if (syncErr) {
+            alert(syncErr);
+            return false;
+        }
+    }
+    document.getElementById('manage-meta-fields-dialog')?.close();
+    modelToNodesEdges();
+    renderCy();
+    syncMetaFieldsButtons();
+    schedulePersistWorkingModel();
+    saveLayout();
+    return true;
+}
+
+async function promoteMetaConfigToDefaultFromDialog() {
+    if (!canonicalTechnicalName) return;
+    if (
+        !confirm(
+            'Save this template to the model, then replace the global default meta config with config/meta_config.json?',
+        )
+    ) {
+        return;
+    }
+    const saved = await saveManageMetaFieldsFromDialog();
+    if (!saved) return;
+    const res = await fetch('/api/promote_meta_config_to_default', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ technical_name: canonicalTechnicalName }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.error || res.statusText || 'Could not promote meta config.');
+        return;
+    }
+    await loadDefaultMetaConfig();
+    await refreshEffectiveMetaConfig();
+    alert('Global default meta config updated.');
 }
 
 function getSortedWordMappings() {
@@ -747,6 +1235,8 @@ async function loadWorkingCopyAndRender(technicalName) {
     await retrieveModel(technicalName, true);
     lastValidModelMetaName = (model.meta?.name ?? '').trim() || technicalName;
     await retrieveLayout(technicalName, true);
+    await refreshEffectiveMetaConfig();
+    ensureMetaFieldsAfterLoad();
     modelToNodesEdges();
     selectedEntityId = null;
     diagramRemovalSelection = null;
@@ -754,6 +1244,7 @@ async function loadWorkingCopyAndRender(technicalName) {
     syncAddRelationshipButtonState();
     syncRemoveSelectedButtonState();
     syncShowTechnicalNamesButton();
+    syncMetaFieldsButtons();
     preservedCyViewport = null;
     fitCyViewportAfterNextRender = false;
     if (cy) {
@@ -870,7 +1361,7 @@ function countModelAttributes() {
 
 function syncAddRelationshipButtonState() {
     const btn = document.getElementById('add-relationship-btn');
-    if (btn) btn.disabled = !canonicalTechnicalName || countModelAttributes() < 2;
+    if (btn) btn.disabled = !canonicalTechnicalName || countRelatableAttributes() < 2;
 }
 
 function syncRemoveSelectedButtonState() {
@@ -1269,7 +1760,25 @@ function renderEntityDetails(ent) {
     const selType = document.createElement('select');
     fillDetailsEnumSelect(selType, SCHEMA_ENTITY_TYPES, ent.entity_type);
     selType.addEventListener('change', () => {
+        const prev = ent.entity_type;
         ent.entity_type = selType.value;
+        if (ent.entity_type === 'view' && prev === 'table') {
+            const removeIds = new Set();
+            ent.attributes = (ent.attributes || []).filter((a) => {
+                if (a.is_meta === true) {
+                    removeIds.add(a.attribute_id);
+                    return false;
+                }
+                return true;
+            });
+            model.relationships = (model.relationships || []).filter(
+                (r) =>
+                    !removeIds.has(r.parent_attribute_id) && !removeIds.has(r.child_attribute_id),
+            );
+            modelToNodesEdges();
+            renderCy();
+            syncAddRelationshipButtonState();
+        }
         schedulePersistWorkingModel();
     });
     appendDetailsFormField(form, 'entity_type', selType);
@@ -1337,6 +1846,14 @@ function renderAttributeDetails(attr) {
 
     const entForAttr = findEntityContainingAttribute(attr.attribute_id);
 
+    if (attr.is_meta === true) {
+        const note = document.createElement('p');
+        note.className = 'details-meta-note';
+        note.textContent =
+            'Meta field (edit the template via “Manage meta fields” in the header).';
+        form.appendChild(note);
+    }
+
     const inpBusiness = document.createElement('input');
     inpBusiness.type = 'text';
     inpBusiness.value = attr.business_name ?? '';
@@ -1388,6 +1905,7 @@ function renderAttributeDetails(attr) {
     selData.addEventListener('change', () => {
         attr.data_type = selData.value;
         clearPrecisionScaleUnlessDecimal(attr);
+        applyAttributeNodeDataInCy(attr);
         schedulePersistWorkingModel();
         renderAttributeDetails(attr);
     });
@@ -1417,26 +1935,28 @@ function renderAttributeDetails(attr) {
         appendDetailsFormField(form, 'scale', inpScale);
     }
 
-    const selKey = document.createElement('select');
-    const noneOpt = document.createElement('option');
-    noneOpt.value = '';
-    noneOpt.textContent = '(none)';
-    noneOpt.selected = attr.key_type === null || attr.key_type === undefined;
-    selKey.appendChild(noneOpt);
-    for (const v of SCHEMA_KEY_TYPES) {
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = v;
-        if (attr.key_type === v) opt.selected = true;
-        selKey.appendChild(opt);
+    if (attr.is_meta !== true) {
+        const selKey = document.createElement('select');
+        const noneOpt = document.createElement('option');
+        noneOpt.value = '';
+        noneOpt.textContent = '(none)';
+        noneOpt.selected = attr.key_type === null || attr.key_type === undefined;
+        selKey.appendChild(noneOpt);
+        for (const v of SCHEMA_KEY_TYPES) {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            if (attr.key_type === v) opt.selected = true;
+            selKey.appendChild(opt);
+        }
+        selKey.addEventListener('change', () => {
+            const v = selKey.value;
+            attr.key_type = v === '' ? null : v;
+            applyAttributeNodeDataInCy(attr);
+            schedulePersistWorkingModel();
+        });
+        appendDetailsFormField(form, 'key_type', selKey);
     }
-    selKey.addEventListener('change', () => {
-        const v = selKey.value;
-        attr.key_type = v === '' ? null : v;
-        applyAttributeNodeDataInCy(attr);
-        schedulePersistWorkingModel();
-    });
-    appendDetailsFormField(form, 'key_type', selKey);
 
     const cbMandatory = document.createElement('input');
     cbMandatory.type = 'checkbox';
@@ -2056,6 +2576,9 @@ function refreshAttributeOverlayContent() {
             manEl.className = 'cy-attr-cell-mand';
             manEl.textContent = attr.mandatory === true ? '*' : '';
 
+            if (attr.is_meta === true) {
+                row.classList.add('cy-attr-meta');
+            }
             row.append(nameEl, keyEl, dtEl, manEl);
             root.appendChild(row);
         }
@@ -2669,6 +3192,13 @@ function submitAddEntity(ev) {
         definition,
         attributes: [],
     };
+    if (entityType === 'table' && model.meta_fields_enabled === true) {
+        const err = applyMetaFieldsToTable(newEnt);
+        if (err) {
+            alert(err);
+            return;
+        }
+    }
     if (!model.entities) model.entities = [];
     model.entities.push(newEnt);
     positions[entity_id] = { x: pos.x, y: pos.y };
@@ -2805,6 +3335,7 @@ function fillAttributeSelectForRelationship(selectEl, entityId, placeholderNoEnt
     const ent = findEntityById(entityId);
     if (!ent) return;
     for (const attr of ent.attributes || []) {
+        if (attr.is_meta === true) continue;
         const opt = document.createElement('option');
         opt.value = attr.attribute_id;
         opt.textContent = attr.business_name ?? attr.technical_name ?? attr.attribute_id;
@@ -2861,8 +3392,8 @@ function openAddRelationshipDialog() {
         alert('Open or create a model first.');
         return;
     }
-    if (countModelAttributes() < 2) {
-        alert('Add at least two attributes (across entities) before creating a relationship.');
+    if (countRelatableAttributes() < 2) {
+        alert('Add at least two non-meta attributes (across entities) before creating a relationship.');
         return;
     }
     resetAddRelationshipForm();
@@ -2908,6 +3439,16 @@ function submitAddRelationship(ev) {
     }
     if (findEntityContainingAttribute(child_attribute_id)?.entity_id !== child_entity_id) {
         alert('Child attribute does not belong to the child entity.');
+        return;
+    }
+    const pAttr = findAttributeById(parent_attribute_id);
+    const cAttr = findAttributeById(child_attribute_id);
+    if (!pAttr || !cAttr) {
+        alert('Selected attribute not found.');
+        return;
+    }
+    if (pAttr.is_meta === true || cAttr.is_meta === true) {
+        alert('Relationships cannot use meta attributes.');
         return;
     }
     const rels = model.relationships || [];
@@ -3269,4 +3810,16 @@ document.getElementById('add-relationship-cancel')?.addEventListener('click', ()
 });
 
 void loadNamingConfig();
+void loadDefaultMetaConfig();
 refreshDiagramMetaStrip();
+
+document.getElementById('toggle-meta-fields-btn')?.addEventListener('click', () => onToggleMetaFieldsClick());
+document.getElementById('manage-meta-fields-btn')?.addEventListener('click', () => openManageMetaFieldsDialog());
+document.getElementById('manage-meta-add-field-btn')?.addEventListener('click', () => addEmptyManageMetaField());
+document.getElementById('manage-meta-save-btn')?.addEventListener('click', () => void saveManageMetaFieldsFromDialog());
+document.getElementById('manage-meta-promote-default-btn')?.addEventListener('click', () =>
+    void promoteMetaConfigToDefaultFromDialog(),
+);
+document.getElementById('manage-meta-cancel-btn')?.addEventListener('click', () => {
+    document.getElementById('manage-meta-fields-dialog')?.close();
+});

@@ -1,6 +1,6 @@
 CREATE TABLE [entity_nm] (
     [col_one] NVARCHAR(255) NOT NULL,
     [col_two] DECIMAL(20,11) NOT NULL,
-    [new_one] NVARCHAR(255) NOT NULL,
+    [new_one] BIT NOT NULL,
     PRIMARY KEY ([col_one])
 );

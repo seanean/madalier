@@ -1,0 +1,14 @@
+{
+    "fields": [
+        {
+            "business_name": "Meta Source Event Ids",
+            "technical_name": "meta_source_event_ids",
+            "data_type": "STRING"
+        },
+        {
+            "business_name": "Meta Source Event Names",
+            "technical_name": "meta_source_event_names",
+            "data_type": "STRING"
+        }
+    ]
+}

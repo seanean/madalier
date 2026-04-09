@@ -1,0 +1,24 @@
+{
+    "fields": [
+        {
+            "business_name": "Meta Source Event Ids",
+            "technical_name": "meta_source_event_ids",
+            "data_type": "STRING"
+        },
+        {
+            "business_name": "Meta Source Event Names",
+            "technical_name": "meta_source_event_names",
+            "data_type": "STRING"
+        },
+        {
+            "business_name": "Meta Insert Timestamp",
+            "technical_name": "meta_insert_timestamp",
+            "data_type": "TIMESTAMP"
+        },
+        {
+            "business_name": "Meta Updated Timestamp",
+            "technical_name": "meta_updated_timestamp",
+            "data_type": "TIMESTAMP"
+        }
+    ]
+}

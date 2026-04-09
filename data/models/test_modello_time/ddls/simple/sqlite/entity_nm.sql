@@ -1,5 +1,5 @@
 CREATE TABLE entity_nm (
     col_one TEXT NOT NULL,
     col_two REAL NOT NULL,
-    new_one TEXT NOT NULL
+    new_one INTEGER NOT NULL
 );

@@ -13,6 +13,25 @@ For architecture, API routes, and on-disk layout, see **[design.md](design.md)**
 - **Diagram** with draggable entities, automatic layout or saved positions ([`schemas/layout.json`](schemas/layout.json)).
 - **Save** promotes the working copy to the canonical model and refreshes **CSV**, **DDL** trees (`full` / `simple` × multiple **dialects**: SQLite, MySQL, Postgres, Snowflake, MSSQL, Databricks), and optionally a **diagram PNG**.
 - **Naming** helpers driven by [`data/config/naming_config.json`](data/config/naming_config.json) (business → technical strings).
+- **Table meta fields** — optional engineering columns (e.g. lineage, timestamps) defined by a template ([`data/config/default_meta_config.json`](data/config/default_meta_config.json) and optional per-model [`config/meta_config.json`](data/models/)); toggled from the header and validated with [`schemas/meta_config.json`](schemas/meta_config.json). See [design.md](design.md) for paths and API details.
+
+### Header bar (main actions)
+
+| Button | What it does |
+|--------|----------------|
+| **New model** | Opens a dialog to create a working model (name, version, description, created by). Derives `technical_name` from the display name using the naming config. |
+| **Open model** | Lists saved canonical models and opens the selected one into a **working copy** under `temp/` for editing. |
+| **Save model** | Promotes the working model and layout to canonical files under `data/models/<technical_name>/`, then regenerates CSV, DDL trees, and optionally saves a diagram PNG. |
+| **Show technical names** / **Show business names** | Toggles whether the diagram uses **technical** or **business** names for entities and attributes (disabled until a model is open). |
+| **Add entity** | Adds a table or view on the diagram; you can drag it to position it. |
+| **Add attribute** | Adds an attribute to the **currently selected entity** (select an entity on the diagram first). |
+| **Add relationship** | Creates a relationship between two **non-meta** attributes on different entities (requires at least two such attributes). |
+| **Remove selected** | Removes the selected diagram element (entity, attribute, or relationship) from the model. |
+| **Export diagram** | Captures the current diagram as a PNG (saves via the API). |
+| **Export DDL** | Writes the `ddls/` tree (full and simple variants × dialects) for the current working model after persisting it. |
+| **Export CSV** | Writes the flattened model CSV next to the canonical model after persisting the working copy. |
+| **Meta fields** | Toggles whether **meta template** columns are applied to every **table** entity (`meta_fields_enabled` on the model). When on, columns are synced from the effective template; when off, meta attributes are removed. Disabled until a model is open. |
+| **Manage meta fields** | Opens a dialog to edit the per-model meta template (`config/meta_config.json`), including add/remove/reorder fields. **Save** writes the file; **Set as default** saves then copies it to the global [`default_meta_config.json`](data/config/default_meta_config.json). Disabled until a model is open. |
 
 ## Requirements
 
@@ -67,6 +86,7 @@ Then open [http://localhost:54321](http://localhost:54321). The dev server uses 
 
 - **Models** are stored under **`data/models/<technical_name>/`**. Treat this as your working data: back it up or version it deliberately if models are important.
 - **Naming config** is **`data/config/naming_config.json`** (validated against [`schemas/naming.json`](schemas/naming.json)).
+- **Default meta-field template** is **`data/config/default_meta_config.json`** (validated against [`schemas/meta_config.json`](schemas/meta_config.json)). A model can override it with **`data/models/<technical_name>/config/meta_config.json`**.
 
 ## Development
 
@@ -85,7 +105,7 @@ Then open [http://localhost:54321](http://localhost:54321). The dev server uses 
 | `static/vendor/` | Bundled front-end libraries |
 | `data/models/` | Model JSON, layouts, CSV, PNG, `ddls/` |
 | `data/config/` | Configuration files (naming) |
-| `schemas/` | JSON Schema for model, layout, naming |
+| `schemas/` | JSON Schema for model, layout, naming, meta config |
 | `scripts/` | `setup.ps1` / `run.ps1` for Windows |
 | `Makefile` | `setup` / `run` for Unix-like systems |
 

@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://github.com/werealldudes/madalier/schemas/layout.json",
+    "$id": "https://github.com/seanean/madalier/schemas/layout.json",
     "title": "Data Model Layout",
     "description": "Describing the positioning of the entities in the Madalier visualization.",
     "type": "object",

@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://github.com/werealldudes/madalier/schemas/naming.json",
+    "$id": "https://github.com/seanean/madalier/schemas/naming.json",
     "title": "Data Model Naming",
     "description": "Describing the naming conventions for entities in the Madalier visualization.",
     "type": "object",

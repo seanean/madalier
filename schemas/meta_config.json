@@ -1,0 +1,72 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/seanean/madalier/schemas/meta_config.json",
+    "title": "Table meta fields template",
+    "description": "Engineering meta columns applied to table entities when meta fields are enabled.",
+    "type": "object",
+    "properties": {
+        "fields": {
+            "description": "Ordered list of meta field definitions (same shape as model attributes except keys).",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "business_name": {
+                        "description": "Business name of the meta attribute.",
+                        "type": "string"
+                    },
+                    "technical_name": {
+                        "description": "Technical name in lower_snake_case.",
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "mandatory": {
+                        "description": "Whether the attribute is mandatory.",
+                        "type": "boolean"
+                    },
+                    "data_type": {
+                        "description": "Logical data type.",
+                        "type": "string",
+                        "enum": [
+                            "STRING",
+                            "TEXT",
+                            "INTEGER",
+                            "BIGINT",
+                            "SMALLINT",
+                            "DECIMAL",
+                            "FLOAT",
+                            "BOOLEAN",
+                            "DATE",
+                            "TIMESTAMP",
+                            "BINARY"
+                        ]
+                    },
+                    "precision": {
+                        "description": "Numeric precision for DECIMAL.",
+                        "type": "integer"
+                    },
+                    "scale": {
+                        "description": "Numeric scale for DECIMAL.",
+                        "type": "integer"
+                    },
+                    "definition": {
+                        "description": "Description of the attribute.",
+                        "type": "string"
+                    },
+                    "source_mapping": {
+                        "description": "Source mapping expression.",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "business_name",
+                    "technical_name",
+                    "data_type"
+                ]
+            }
+        }
+    },
+    "required": [
+        "fields"
+    ]
+}

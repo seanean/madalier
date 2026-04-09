@@ -88,6 +88,9 @@ def path_stem_from_envelope(data, *, require_working=False):
 
 MODELS_DIR = os.path.join('data', 'models')
 
+DEFAULT_META_CONFIG_PATH = os.path.join('data', 'config', 'default_meta_config.json')
+META_CONFIG_SCHEMA_PATH = os.path.join('schemas', 'meta_config.json')
+
 MODEL_CSV_COLUMNS = (
     'entity_type',
     'entity_business_name',
@@ -101,6 +104,7 @@ MODEL_CSV_COLUMNS = (
     'scale',
     'attribute_definition',
     'source_mapping',
+    'is_meta',
 )
 
 # Reject absurd uploads (decoded PNG bytes).
@@ -266,6 +270,12 @@ def _entity_csv_prefix(ent):
     ]
 
 
+def _csv_is_meta_cell(attr):
+    if attr.get('is_meta') is not True:
+        return ''
+    return 'true'
+
+
 def _attribute_csv_suffix(attr):
     return [
         _csv_optional_str(attr.get('business_name')),
@@ -276,7 +286,70 @@ def _attribute_csv_suffix(attr):
         _csv_int_cell(attr, 'scale'),
         _csv_optional_str(attr.get('definition')),
         _csv_optional_str(attr.get('source_mapping')),
+        _csv_is_meta_cell(attr),
     ]
+
+
+def model_meta_config_json_path(technical_name):
+    """Per-model meta template override: data/models/<tn>/config/meta_config.json."""
+    return os.path.join(MODELS_DIR, technical_name, 'config', 'meta_config.json')
+
+
+def _load_meta_config_schema():
+    with open(META_CONFIG_SCHEMA_PATH, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def load_validated_default_meta_config():
+    """Load and validate data/config/default_meta_config.json."""
+    try:
+        with open(DEFAULT_META_CONFIG_PATH, encoding='utf-8') as f:
+            data = json.load(f)
+    except OSError as e:
+        logger.error('default_meta_config read failed: %s', e)
+        raise ApiError('could not load default meta config', 500) from e
+    try:
+        jsonschema.validate(instance=data, schema=_load_meta_config_schema())
+    except jsonschema.ValidationError as e:
+        logger.error('default_meta_config validation failed: %s', e)
+        raise ApiError(str(e), 500) from e
+    return data
+
+
+def validate_meta_config_instance(config):
+    """Validate a meta config object; raises ApiError on failure."""
+    if not isinstance(config, dict):
+        raise ApiError('config must be an object')
+    try:
+        jsonschema.validate(instance=config, schema=_load_meta_config_schema())
+    except jsonschema.ValidationError as e:
+        raise ApiError(str(e), 400) from e
+
+
+def validate_model_meta_invariants(model_doc):
+    """
+    is_meta only on table entities, key_type must be absent/null on meta attrs,
+    relationships must not reference meta attributes.
+    """
+    attr_is_meta = {}
+    for ent in model_doc.get('entities') or []:
+        et = ent.get('entity_type')
+        for attr in ent.get('attributes') or []:
+            aid = attr.get('attribute_id')
+            if not isinstance(aid, str):
+                continue
+            is_m = attr.get('is_meta') is True
+            attr_is_meta[aid] = is_m
+            if is_m:
+                if et != 'table':
+                    raise ApiError('meta attributes (is_meta) are only allowed on table entities')
+                if attr.get('key_type') is not None:
+                    raise ApiError('meta attributes cannot have a key_type')
+    for rel in model_doc.get('relationships') or []:
+        for key in ('parent_attribute_id', 'child_attribute_id'):
+            aid = rel.get(key)
+            if isinstance(aid, str) and attr_is_meta.get(aid):
+                raise ApiError('relationships cannot reference meta attributes')
 
 
 def model_doc_to_csv_rows(model_doc):
@@ -296,7 +369,7 @@ def model_doc_to_csv_rows(model_doc):
         )
         ordered_attrs = [a for _, a in indexed]
         if not ordered_attrs:
-            rows.append(prefix + [''] * (len(MODEL_CSV_COLUMNS) - 4))
+            rows.append(prefix + [''] * (len(MODEL_CSV_COLUMNS) - len(prefix)))
         else:
             for attr in ordered_attrs:
                 rows.append(prefix + _attribute_csv_suffix(attr))
@@ -664,6 +737,7 @@ def api_save_model():
             model_doc['meta'] = {}
         model_doc['meta']['modified'] = utc_iso_timestamp()
         jsonschema.validate(instance=model_doc, schema=model_schema)
+        validate_model_meta_invariants(model_doc)
         layout_path_w = resolved_layout_json_path(wstem)
         if os.path.isfile(layout_path_w):
             with open(layout_path_w, encoding='utf-8') as f:
@@ -723,6 +797,105 @@ def api_naming_config():
         logger.error('naming_config validation failed: %s', e)
         return jsonify({'error': str(e)}), 500
     return jsonify(data)
+
+
+@app.route('/api/default_meta_config', methods=['GET'])
+def api_default_meta_config():
+    """GET — default_meta_config.json validated against schemas/meta_config.json."""
+    try:
+        data = load_validated_default_meta_config()
+    except ApiError as e:
+        return jsonify({'error': e.message}), e.status_code
+    return jsonify(data)
+
+
+@app.route('/api/model_meta_config', methods=['POST'])
+def api_model_meta_config():
+    """POST JSON: technical_name, optional working — effective meta template for canonical model folder."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'expected JSON object'}), 400
+    try:
+        tn = parse_technical_name_field(data)
+    except ApiError as e:
+        return jsonify({'error': e.message}), 400
+    try:
+        default_cfg = load_validated_default_meta_config()
+    except ApiError as e:
+        return jsonify({'error': e.message}), e.status_code
+    override_path = model_meta_config_json_path(tn)
+    if os.path.isfile(override_path):
+        try:
+            with open(override_path, encoding='utf-8') as f:
+                config = json.load(f)
+            validate_meta_config_instance(config)
+        except OSError as e:
+            logger.error('model_meta_config read failed: %s', e)
+            return jsonify({'error': 'could not load model meta config'}), 500
+        except ApiError as e:
+            return jsonify({'error': e.message}), e.status_code
+        return jsonify({'uses_default': False, 'config': config}), 200
+    return jsonify({'uses_default': True, 'config': default_cfg}), 200
+
+
+@app.route('/api/save_model_meta_config', methods=['POST'])
+def api_save_model_meta_config():
+    """POST JSON: technical_name, config — write data/models/<tn>/config/meta_config.json."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': 'expected JSON object'}), 400
+    try:
+        tn = parse_technical_name_field(data)
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), 400
+    config = data.get('config')
+    try:
+        validate_meta_config_instance(config)
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), e.status_code
+    out_path = model_meta_config_json_path(tn)
+    try:
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        logger.info('Saved model meta config %s', out_path)
+    except OSError as e:
+        logger.error('save_model_meta_config write failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True}), 200
+
+
+@app.route('/api/promote_meta_config_to_default', methods=['POST'])
+def api_promote_meta_config_to_default():
+    """POST JSON: technical_name — copy model config/meta_config.json to default_meta_config.json."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': 'expected JSON object'}), 400
+    try:
+        tn = parse_technical_name_field(data)
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), 400
+    src = model_meta_config_json_path(tn)
+    if not os.path.isfile(src):
+        return jsonify({'success': False, 'error': 'model has no config/meta_config.json'}), 400
+    try:
+        with open(src, encoding='utf-8') as f:
+            config = json.load(f)
+        validate_meta_config_instance(config)
+    except OSError as e:
+        logger.error('promote_meta_config read failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    except ApiError as e:
+        return jsonify({'success': False, 'error': e.message}), e.status_code
+    try:
+        os.makedirs(os.path.dirname(DEFAULT_META_CONFIG_PATH), exist_ok=True)
+        with open(DEFAULT_META_CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        logger.info('Promoted meta config from %s to default', src)
+    except OSError as e:
+        logger.error('promote_meta_config write failed: %s', e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True}), 200
 
 
 @app.route('/api/load_model', methods=['POST'])
@@ -798,6 +971,10 @@ def api_save_working_model():
         with open('schemas/model.json') as f:
             model_schema = json.load(f)
         jsonschema.validate(instance=model_doc, schema=model_schema)
+        validate_model_meta_invariants(model_doc)
+    except ApiError as e:
+        logger.error('save_working_model invariant check failed: %s', e.message)
+        return jsonify({'success': False, 'error': e.message}), e.status_code
     except jsonschema.ValidationError as e:
         logger.error('save_working_model validation failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 400

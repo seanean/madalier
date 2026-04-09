@@ -223,6 +223,46 @@
             text-align: right;
         }
 
+        .cy-attr-overlay-row.cy-attr-meta .cy-attr-cell-name,
+        .cy-attr-overlay-row.cy-attr-meta .cy-attr-cell-key,
+        .cy-attr-overlay-row.cy-attr-meta .cy-attr-cell-dt,
+        .cy-attr-overlay-row.cy-attr-meta .cy-attr-cell-mand {
+            color: #777;
+            font-weight: 400;
+        }
+
+        .details-meta-note {
+            margin: 0 0 0.75rem;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .manage-meta-fields-body {
+            max-height: 55vh;
+            overflow: auto;
+        }
+
+        .manage-meta-field-row {
+            display: grid;
+            gap: 0.35rem;
+            padding: 0.65rem 0;
+            border-bottom: 1px solid #e8e8e8;
+        }
+
+        .manage-meta-field-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.15rem;
+        }
+
+        .manage-meta-field-actions button {
+            padding: 0.2rem 0.45rem;
+            font: inherit;
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+
         .splitter {
             flex-shrink: 0;
             width: 6px;
@@ -572,6 +612,8 @@
         <button type="button" id="export-diagram-btn">Export diagram</button>
         <button type="button" id="export-ddl-btn">Export DDL</button>
         <button type="button" id="export-csv-btn">Export CSV</button>
+        <button type="button" id="toggle-meta-fields-btn" disabled aria-pressed="false">Meta fields</button>
+        <button type="button" id="manage-meta-fields-btn" disabled>Manage meta fields</button>
     </header>
     <main class="app-main">
         <div class="app-workspace">
@@ -727,6 +769,23 @@
                 <button type="submit" id="add-relationship-submit">Add</button>
             </footer>
         </form>
+    </dialog>
+
+    <dialog id="manage-meta-fields-dialog" class="new-model-dialog" aria-labelledby="manage-meta-fields-dialog-title">
+        <header id="manage-meta-fields-dialog-title">Manage meta fields</header>
+        <div class="dialog-body">
+            <p class="field-hint">Template columns applied to every <strong>table</strong> when Meta fields is on. Save writes
+                <code>config/meta_config.json</code> for this model; “Set as default” updates the global default file after saving.</p>
+            <p style="margin: 0 0 0.5rem;">
+                <button type="button" id="manage-meta-add-field-btn">Add field</button>
+            </p>
+            <div id="manage-meta-fields-list" class="manage-meta-fields-body" aria-label="Meta field definitions"></div>
+        </div>
+        <footer>
+            <button type="button" id="manage-meta-cancel-btn">Cancel</button>
+            <button type="button" id="manage-meta-promote-default-btn">Set as default</button>
+            <button type="button" id="manage-meta-save-btn">Save</button>
+        </footer>
     </dialog>
 </body>
 
