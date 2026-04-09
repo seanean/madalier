@@ -1,5 +1,19 @@
 import { toPng } from './vendor/html-to-image.bundle.js';
 
+/*
+ * Madalier browser UI (see design.md).
+ *
+ * State: `model` and `layout` mirror the JSON API; `positions` holds entity x/y for the diagram.
+ * `canonicalTechnicalName` is the live model id; the server stores working copies under temp_* paths.
+ * `cy` is the Cytoscape instance; `nodes` / `edges` are built in modelToNodesEdges().
+ *
+ * Server I/O: fetch() helpers (e.g. retrieveModel, retrieveLayout, persistWorkingModel, saveLayout,
+ * saveCanonicalModel, export*) post JSON to /api/*. Naming rules come from GET /api/naming_config.
+ *
+ * Flow: dialogs create/open models → loadWorkingCopyAndRender → renderCy; edits debounce to
+ * save_working_model; Save promotes via save_model. Section markers below use // --- ... ---
+ */
+
 /** Minimum entity card width (px); actual width from label measure + padding. */
 const MIN_CARD_WIDTH = 220;
 const HEADER_H = 28;
@@ -31,6 +45,8 @@ const ATTR_OVERLAY_ROW_REF_PX = ROW_H;
 const ATTR_OVERLAY_FONT_MIN_PX = 5;
 /** Cytoscape scroll-wheel zoom multiplier; default in the library is 1 (lower = finer steps). */
 const CY_WHEEL_SENSITIVITY = 0.5;
+
+// --- Diagram: label metrics & entity card width ---
 
 let _measureLabelCanvas;
 function measureLabelWidth(text) {
@@ -197,6 +213,8 @@ function syncEntityCardWidthInCy(entityId) {
     cy.style().update();
 }
 
+// --- In-memory model + diagram globals ---
+
 let model = {};
 let layout = {};
 let positions = {};
@@ -263,6 +281,8 @@ const NAMING_CONVENTIONS = [
     'camelCase',
     'PascalCase',
 ];
+
+// --- Naming: /api/naming_config, business name → technical_name ---
 
 function defaultNamingConfig() {
     return { naming_convention: 'lower_snake_case', word_mappings: [] };
@@ -682,6 +702,8 @@ async function applyPendingMetaTechnicalRename() {
     refreshDiagramMetaStrip();
 }
 
+// --- Model load/save: fetch API, open canonical, working copy ---
+
 async function retrieveModel(technicalName, working) {
     const res = await fetch('/api/load_model', {
         method: 'POST',
@@ -800,6 +822,8 @@ async function openModel() {
     }
 }
 
+// --- Model graph lookups & diagram-adjacent UI state ---
+
 function findEntityById(id) {
     const entities = model.entities || [];
     return entities.find((e) => e.entity_id === id) ?? null;
@@ -853,6 +877,8 @@ function syncRemoveSelectedButtonState() {
     const btn = document.getElementById('remove-selected-btn');
     if (btn) btn.disabled = !canonicalTechnicalName || !diagramRemovalSelection;
 }
+
+// --- Diagram: remove selected element, new-entity position, relationship edge data ---
 
 /** Remove the diagram element indicated by `diagramRemovalSelection` from `model`, persist working copy, and refresh. */
 function removeDiagramSelection() {
@@ -1094,6 +1120,8 @@ function patchAttributeTechnicalNameInCy(attributeId, technicalName) {
     applyAttributeNodeDataInCy(m);
 }
 
+// --- Debounced persist working model + details error banner ---
+
 function syncDetailsPersistBanner() {
     const el = document.getElementById('details-persist-message');
     if (!el) return;
@@ -1150,6 +1178,8 @@ async function persistWorkingModel() {
         return false;
     }
 }
+
+// --- Details pane: form builders & entity / attribute / relationship editors ---
 
 function appendDetailsFormField(form, labelText, control) {
     const wrap = document.createElement('div');
@@ -1894,6 +1924,8 @@ function clearDetailsPane() {
     syncRemoveSelectedButtonState();
 }
 
+// --- Cytoscape: model → nodes/edges, renderCy, layout persistence, HTML overlays ---
+
 function modelToNodesEdges() {
     nodes = [];
     edges = [];
@@ -2485,6 +2517,8 @@ function cyNodeCardWidth(ele) {
     return typeof w === 'number' && w > 0 ? w : MIN_CARD_WIDTH;
 }
 
+// --- Cytoscape stylesheet ---
+
 const cyStyle = [
     {
         selector: 'node[type = "entity"]',
@@ -2560,6 +2594,8 @@ const cyStyle = [
     }
 
 ];
+
+// --- Dialogs: add entity, attribute, relationship ---
 
 function initAddAttributeDataTypeSelect() {
     const sel = document.getElementById('add-attribute-data-type');
@@ -2925,6 +2961,8 @@ function wireAddRelationshipDialogControls() {
     }
 }
 
+// --- Toolbar: new model, open, save, export CSV/DDL/PNG ---
+
 function resetNewModelForm() {
     const form = document.getElementById('new-model-form');
     if (form) form.reset();
@@ -3203,6 +3241,8 @@ async function exportModelDdl() {
 }
 
 document.getElementById('export-ddl-btn')?.addEventListener('click', () => void exportModelDdl());
+
+// --- Startup: wire DOM controls and load naming config ---
 
 initAddAttributeDataTypeSelect();
 syncAddAttributeDecimalFieldsVisibility();

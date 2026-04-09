@@ -1,3 +1,12 @@
+"""
+Madalier: Flask HTTP API and persistence for logical data models.
+
+Serves the single-page UI, reads/writes JSON under data/models/, validates with
+schemas/*.json, and delegates DDL file generation to ddl_export. Development
+server: localhost port 54321 (see __main__ block).
+
+See design.md for routes, disk layout, and agent-oriented file map.
+"""
 from flask import Flask, render_template, request, jsonify
 from app_logger import get_logger
 import ddl_export
@@ -16,6 +25,8 @@ from datetime import datetime, timezone
 # The UI should mirror this pattern for instant feedback; the server still validates once here because
 # anything can call the API (not only the browser).
 TECHNICAL_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
+
+# --- API errors ---
 
 
 class ApiError(Exception):
@@ -72,6 +83,9 @@ def path_stem_from_envelope(data, *, require_working=False):
         raise ApiError('unknown model', 404)
     return path_stem
 
+
+# --- Model paths: canonical vs working (temp_*) and legacy fallbacks ---
+
 MODELS_DIR = os.path.join('data', 'models')
 
 MODEL_CSV_COLUMNS = (
@@ -92,6 +106,9 @@ MODEL_CSV_COLUMNS = (
 # Reject absurd uploads (decoded PNG bytes).
 MAX_DIAGRAM_PNG_BYTES = 15 * 1024 * 1024
 PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
+
+
+# --- Iterate models on disk ---
 
 
 def _iter_model_subdirs():
@@ -190,6 +207,9 @@ def _draft_working_pair_paths(model_dir, wstem):
     return p0, l0
 
 
+# --- Artifact paths (PNG, CSV) ---
+
+
 def diagram_png_path(technical_name):
     return os.path.join(MODELS_DIR, technical_name, f'{technical_name}.png')
 
@@ -202,6 +222,9 @@ def ensure_model_subdir_for_stem(stem):
     d = model_subdir_for_stem(stem)
     os.makedirs(d, exist_ok=True)
     return d
+
+
+# --- Model → CSV rows ---
 
 
 def _csv_optional_str(value):
@@ -280,6 +303,9 @@ def model_doc_to_csv_rows(model_doc):
     return rows
 
 
+# --- PNG payload decode (save_model / save_diagram_png) ---
+
+
 def decode_request_png_base64(raw):
     """Decode data URL or raw base64 PNG bytes. Raises ApiError if missing or invalid."""
     if raw is None or (isinstance(raw, str) and not raw.strip()):
@@ -307,6 +333,9 @@ def optional_decode_request_png_base64(raw):
     if isinstance(raw, str) and not raw.strip():
         return None
     return decode_request_png_base64(raw)
+
+
+# --- Canonical save: CSV, DDL, optional diagram PNG ---
 
 
 def write_canonical_model_artifacts(model_doc, tn, png_bytes=None):
@@ -357,6 +386,9 @@ def write_canonical_model_artifacts(model_doc, tn, png_bytes=None):
             raise ApiError(str(e), 500)
 
 
+# --- JSON request parsing (non-route helpers) ---
+
+
 def path_stem_from_load_json():
     data = request.get_json(silent=True)
     return path_stem_from_envelope(data)
@@ -388,12 +420,19 @@ def technical_name_from_post_create():
     return tn
 
 
+# --- Timestamps ---
+
+
 def utc_iso_timestamp():
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
+# --- HTTP API ---
+
+
 @app.route('/api/create_model', methods=['POST'])
 def api_create_model():
+    """POST JSON: name, technical_name, description, version, created_by — create empty working model + layout."""
     technical_name = technical_name_from_post_create()
     data = request.get_json(silent=True)
     display_name = _require_str(data, 'name', non_empty=True)
@@ -449,6 +488,9 @@ def technical_name_from_open_json():
     return tn
 
 
+# --- Canonical file cleanup (supersede) ---
+
+
 def _delete_canonical_model_files(stem):
     """Remove canonical model folder artifacts for stem (validated). Best-effort."""
     if not TECHNICAL_NAME_RE.fullmatch(stem):
@@ -477,6 +519,7 @@ def _delete_canonical_model_files(stem):
 
 @app.route('/api/rename_working_model', methods=['POST'])
 def api_rename_working_model():
+    """POST JSON: from_technical_name, to_technical_name — rename draft/working paths before or after canonical save."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({'success': False, 'error': 'expected JSON object'}), 400
@@ -565,6 +608,7 @@ def api_rename_working_model():
 
 @app.route('/api/open_model', methods=['POST'])
 def api_open_model():
+    """POST JSON: technical_name — copy canonical model + layout into temp_* working files."""
     tn = technical_name_from_open_json()
     try:
         os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
@@ -588,6 +632,7 @@ def api_open_model():
 
 @app.route('/api/save_model', methods=['POST'])
 def api_save_model():
+    """POST JSON: technical_name; optional png_base64, supersede_technical_name — promote working copy to canonical + artifacts."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({'success': False, 'error': 'expected JSON object'}), 400
@@ -650,16 +695,19 @@ def api_save_model():
 
 @app.route('/')
 def index():
+    """Serve main UI."""
     return render_template('index.html')
 
 
 @app.route('/api/list_technical_names', methods=['GET'])
 def api_list_technical_names():
+    """GET — list canonical model technical_name values."""
     return jsonify({'technical_names': list_technical_names()})
 
 
 @app.route('/api/naming_config', methods=['GET'])
 def api_naming_config():
+    """GET — naming_config.json validated against schemas/naming.json."""
     path = os.path.join('data', 'config', 'naming_config.json')
     try:
         with open(path, encoding='utf-8') as f:
@@ -679,11 +727,16 @@ def api_naming_config():
 
 @app.route('/api/load_model', methods=['POST'])
 def api_load_model():
+    """POST JSON: technical_name, optional working — return model document."""
     path_stem = path_stem_from_load_json()
     return load_model(path_stem)
 
 
+# --- load_model / load_layout helpers ---
+
+
 def load_model(stem):
+    """Load and validate model JSON for path stem; return Flask jsonify response."""
     with open('schemas/model.json') as f:
         schema = json.load(f)
         logger.info('Model schema loaded.')
@@ -703,11 +756,13 @@ def load_model(stem):
 
 @app.route('/api/load_layout', methods=['POST'])
 def api_load_layout():
+    """POST JSON: technical_name, optional working — return layout object or empty layout."""
     path_stem = path_stem_from_load_json()
     return load_layout(path_stem)
 
 
 def load_layout(stem):
+    """Load layout JSON for stem or return empty layout; validate when file exists."""
     with open('schemas/layout.json') as f:
         schema = json.load(f)
         logger.info('Layout schema loaded.')
@@ -730,6 +785,7 @@ def load_layout(stem):
 
 @app.route('/api/save_working_model', methods=['POST'])
 def api_save_working_model():
+    """POST JSON: working true, technical_name, model — persist working JSON only."""
     data = request.get_json(silent=True)
     path_stem = path_stem_from_envelope(data, require_working=True)
     model_doc = data.get('model')
@@ -758,6 +814,7 @@ def api_save_working_model():
 
 @app.route('/api/export_model_csv', methods=['POST'])
 def api_export_model_csv():
+    """POST JSON: stem envelope — write flattened CSV next to canonical model."""
     data = request.get_json(silent=True)
     path_stem = path_stem_from_envelope(data)
     path = resolved_model_json_path(path_stem)
@@ -796,6 +853,7 @@ def api_export_model_csv():
 
 @app.route('/api/export_model_ddl', methods=['POST'])
 def api_export_model_ddl():
+    """POST JSON: stem envelope — regenerate ddls/ tree under model folder."""
     data = request.get_json(silent=True)
     path_stem = path_stem_from_envelope(data)
     path = resolved_model_json_path(path_stem)
@@ -839,6 +897,7 @@ def api_export_model_ddl():
 
 @app.route('/api/save_diagram_png', methods=['POST'])
 def api_save_diagram_png():
+    """POST JSON: technical_name, png_base64 — save diagram PNG for canonical folder."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         raise ApiError('expected JSON object')
@@ -861,6 +920,7 @@ def api_save_diagram_png():
 
 @app.route('/api/save_layout', methods=['POST'])
 def api_save_layout():
+    """POST JSON: technical_name, working, layout array — validate and save layout JSON."""
     data = request.get_json(silent=True)
     path_stem = path_stem_from_envelope(data)
     layout_arr = data.get('layout')
@@ -871,6 +931,7 @@ def api_save_layout():
 
 
 def save_layout(layout_to_save, stem):
+    """Validate layout_to_save and write layout JSON for stem."""
     with open('schemas/layout.json') as f:
         schema = json.load(f)
         logger.info('Layout schema loaded.')

@@ -1,10 +1,17 @@
+"""
+Shared logging setup for Madalier (console-only by default).
+
+All modules should use get_logger(__name__) for consistent formatting and level.
+"""
 import logging
 import sys
 from datetime import datetime
 
 ###########################Logging Setup###########################
 
+
 def get_logger(name: str) -> logging.Logger:
+    """Return a named logger with a single StreamHandler (WARNING) and ISO-style formatter."""
 
     # init logger
     logger = logging.getLogger(name)

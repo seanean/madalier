@@ -1,5 +1,8 @@
 """
 Generate per-entity DDL .sql files for multiple SQL dialects from a Madalier model document.
+
+Public entry point: write_model_ddls(). Dialects and variants are defined by DIALECTS and
+DDL_VARIANTS; logical types map to physical SQL in _LOGICAL_TYPES.
 """
 
 from __future__ import annotations
@@ -128,6 +131,7 @@ _DIALECTS_BARE_IDENT_WHEN_SAFE = frozenset({'postgres', 'sqlite', 'snowflake', '
 
 
 def quote_ident(name: str, dialect: str) -> str:
+    """Quote identifier for dialect (bare when safe, backticks/brackets/double-quotes otherwise)."""
     if dialect in _DIALECTS_BARE_IDENT_WHEN_SAFE and _BARE_IDENT_SAFE.fullmatch(name):
         return name
     if dialect == 'mysql':
@@ -138,6 +142,7 @@ def quote_ident(name: str, dialect: str) -> str:
 
 
 def _physical_type_for_attribute(attr: dict[str, Any], dialect: str) -> str:
+    """Map model data_type (+ precision/scale for DECIMAL) to dialect-specific SQL type."""
     dt = attr.get('data_type')
     if not isinstance(dt, str):
         raise DdlExportError('attribute missing data_type')
@@ -244,6 +249,7 @@ def _create_table_sql(
     *,
     full: bool,
 ) -> str:
+    """Build CREATE TABLE DDL; full adds PK and inline FK REFERENCES from relationships."""
     _, attr_site = _build_lookup_maps(model_doc)
     relationships = list(model_doc.get('relationships') or [])
     etn = entity['technical_name']
@@ -288,6 +294,7 @@ def entity_sql(
     *,
     full: bool = True,
 ) -> str:
+    """DDL for one entity: view stub or CREATE TABLE per dialect and full/simple mode."""
     etype = entity.get('entity_type')
     etn = entity.get('technical_name')
     if not isinstance(etn, str) or not etn.strip():
