@@ -1,0 +1,37 @@
+This file lists third-party components shipped with Madalier. The project
+license is in LICENSE; each component below remains under its own license.
+
+Bundled JavaScript (static/vendor/)
+------------------------------------
+
+1. html-to-image
+   Version: 1.11.11 (bundled build; see header in static/vendor/html-to-image.bundle.js)
+   License: MIT
+   https://github.com/bubkoo/html-to-image
+
+2. Cytoscape.js
+   Version: as bundled in static/vendor/cytoscape.min.js (copyright 2016–2025 in file)
+   License: MIT
+   https://github.com/cytoscape/cytoscape.js
+
+3. cytoscape-dagre
+   Version: 2.5.0 (per jsDelivr comment in static/vendor/cytoscape-dagre.min.js)
+   License: MIT
+   https://github.com/cytoscape/cytoscape.js-dagre
+
+4. dagre (dagre.min.js)
+   License: MIT (copyright Chris Pettitt; full text in static/vendor/dagre.min.js)
+   https://github.com/dagrejs/dagre
+
+Python dependencies (install via requirements.txt)
+--------------------------------------------------
+
+5. Flask 3.1.3 — BSD-3-Clause
+   https://github.com/pallets/flask
+
+6. jsonschema 4.26.0 — MIT
+   https://github.com/python-jsonschema/jsonschema
+
+Install-time transitive dependencies (not vendored) have their own licenses;
+see metadata in your environment (e.g. pip show / package site) if you need
+a full bill of materials.
