@@ -68,7 +68,7 @@ def path_stem_from_envelope(data, *, require_working=False):
     if require_working and not working:
         raise ApiError('working must be true')
     path_stem = working_stem(tn) if working else tn
-    if not os.path.isfile(model_json_path(path_stem)):
+    if not os.path.isfile(resolved_model_json_path(path_stem)):
         raise ApiError('unknown model', 404)
     return path_stem
 
@@ -104,13 +104,12 @@ def _iter_model_subdirs():
             yield name, path
 
 
-def _find_json_in_model_subdirs(filename):
-    """Return absolute path to MODELS_DIR/<subdir>/<filename> if it exists, else None."""
-    for _, subdir_path in _iter_model_subdirs():
-        p = os.path.join(subdir_path, filename)
-        if os.path.isfile(p):
-            return p
-    return None
+# Working-copy JSON (temp_*) lives under data/models/<technical_name>/temp/.
+WORKING_FILES_DIRNAME = 'temp'
+
+
+def working_files_dir(technical_name):
+    return os.path.join(MODELS_DIR, technical_name, WORKING_FILES_DIRNAME)
 
 
 def list_technical_names():
@@ -133,13 +132,10 @@ def working_stem(technical_name):
 def model_subdir_for_stem(stem):
     """
     Directory for this path stem. Canonical stem => data/models/<stem>/.
-    Working temp_* => directory that already contains <stem>.json, else data/models/<suffix>/ for temp_<suffix>.
+    Working temp_* => data/models/<technical_name>/temp/ (technical_name is stem without 'temp_' prefix).
     """
     if stem.startswith('temp_'):
-        found = _find_json_in_model_subdirs(f'{stem}.json')
-        if found:
-            return os.path.dirname(found)
-        return os.path.join(MODELS_DIR, stem[5:])
+        return working_files_dir(stem[5:])
     return os.path.join(MODELS_DIR, stem)
 
 
@@ -149,6 +145,49 @@ def model_json_path(stem):
 
 def layout_json_path(stem):
     return os.path.join(model_subdir_for_stem(stem), f'layout_{stem}.json')
+
+
+def _legacy_working_model_json_path(stem):
+    """Before temp/ subfolder, working model JSON lived in the model root."""
+    return os.path.join(MODELS_DIR, stem[5:], f'{stem}.json')
+
+
+def _legacy_working_layout_json_path(stem):
+    return os.path.join(MODELS_DIR, stem[5:], f'layout_{stem}.json')
+
+
+def resolved_model_json_path(stem):
+    """Path to open for stem; prefers data/models/<tn>/temp/, falls back to legacy model root."""
+    primary = model_json_path(stem)
+    if stem.startswith('temp_') and not os.path.isfile(primary):
+        legacy = _legacy_working_model_json_path(stem)
+        if os.path.isfile(legacy):
+            return legacy
+    return primary
+
+
+def resolved_layout_json_path(stem):
+    primary = layout_json_path(stem)
+    if stem.startswith('temp_') and not os.path.isfile(primary):
+        legacy = _legacy_working_layout_json_path(stem)
+        if os.path.isfile(legacy):
+            return legacy
+    return primary
+
+
+def _draft_working_pair_paths(model_dir, wstem):
+    """
+    For an unsaved draft folder model_dir, return (model_path, layout_path) for working stem wstem.
+    Prefers model_dir/temp/; falls back to legacy files in model_dir root.
+    """
+    tdir = os.path.join(model_dir, WORKING_FILES_DIRNAME)
+    p1 = os.path.join(tdir, f'{wstem}.json')
+    l1 = os.path.join(tdir, f'layout_{wstem}.json')
+    if os.path.isfile(p1):
+        return p1, l1
+    p0 = os.path.join(model_dir, f'{wstem}.json')
+    l0 = os.path.join(model_dir, f'layout_{wstem}.json')
+    return p0, l0
 
 
 def diagram_png_path(technical_name):
@@ -344,7 +383,7 @@ def technical_name_from_post_create():
     tn = parse_technical_name_field(data)
     if tn in list_technical_names():
         raise ApiError('a model with this technical_name already exists', 409)
-    if os.path.isfile(model_json_path(working_stem(tn))):
+    if os.path.isfile(resolved_model_json_path(working_stem(tn))):
         raise ApiError('a working file already exists for this technical_name', 409)
     return tn
 
@@ -450,9 +489,9 @@ def api_rename_working_model():
         return jsonify({'success': True, 'technical_name': new}), 200
     w_old = working_stem(old)
     w_new = working_stem(new)
-    old_model = model_json_path(w_old)
+    old_model_resolved = resolved_model_json_path(w_old)
     new_model = model_json_path(w_new)
-    if not os.path.isfile(old_model):
+    if not os.path.isfile(old_model_resolved):
         return jsonify({'success': False, 'error': 'working model not found'}), 404
     if os.path.isfile(new_model):
         return jsonify(
@@ -466,8 +505,8 @@ def api_rename_working_model():
     old_dir = os.path.join(MODELS_DIR, old)
     new_dir = os.path.join(MODELS_DIR, new)
     draft_only = not os.path.isfile(old_canon)
-    old_layout_canon = layout_json_path(w_old)
-    new_layout_canon = layout_json_path(w_new)
+    old_layout_resolved = resolved_layout_json_path(w_old)
+    new_layout = layout_json_path(w_new)
 
     try:
         if draft_only:
@@ -476,46 +515,51 @@ def api_rename_working_model():
                     {'success': False, 'error': 'a model folder already exists for that technical_name'}
                 ), 409
             os.rename(old_dir, new_dir)
+            src_m, src_l = _draft_working_pair_paths(new_dir, w_old)
+            if not os.path.isfile(src_m):
+                try:
+                    os.rename(new_dir, old_dir)
+                except OSError as e2:
+                    logger.error('rename_working_model rollback failed: %s', e2)
+                return jsonify({'success': False, 'error': 'working model not found'}), 404
+            ensure_model_subdir_for_stem(w_new)
+            dst_m = model_json_path(w_new)
+            dst_l = layout_json_path(w_new)
             try:
-                os.rename(
-                    os.path.join(new_dir, f'{w_old}.json'),
-                    os.path.join(new_dir, f'{w_new}.json'),
-                )
+                os.rename(src_m, dst_m)
             except OSError:
-                os.rename(new_dir, old_dir)
+                try:
+                    os.rename(new_dir, old_dir)
+                except OSError as e2:
+                    logger.error('rename_working_model rollback failed: %s', e2)
                 raise
         else:
-            os.rename(old_model, new_model)
+            ensure_model_subdir_for_stem(w_new)
+            os.rename(old_model_resolved, new_model)
 
         try:
             if draft_only:
-                lo_src = os.path.join(new_dir, f'layout_{w_old}.json')
-                lo_dst = os.path.join(new_dir, f'layout_{w_new}.json')
-                if os.path.isfile(lo_src):
-                    os.rename(lo_src, lo_dst)
-            else:
-                if os.path.isfile(old_layout_canon):
-                    os.rename(old_layout_canon, new_layout_canon)
+                if os.path.isfile(src_l):
+                    os.rename(src_l, dst_l)
+            elif os.path.isfile(old_layout_resolved):
+                os.rename(old_layout_resolved, new_layout)
         except OSError:
             if draft_only:
                 try:
-                    os.rename(
-                        os.path.join(new_dir, f'{w_new}.json'),
-                        os.path.join(new_dir, f'{w_old}.json'),
-                    )
+                    os.rename(dst_m, src_m)
                     os.rename(new_dir, old_dir)
                 except OSError as e2:
                     logger.error('rename_working_model rollback failed: %s', e2)
             else:
                 try:
-                    os.rename(new_model, old_model)
+                    os.rename(new_model, old_model_resolved)
                 except OSError as e2:
                     logger.error('rename_working_model rollback failed: %s', e2)
             raise
     except OSError as e:
         logger.error('rename_working_model failed: %s', e)
         return jsonify({'success': False, 'error': str(e)}), 500
-    logger.info('Renamed working model %s -> %s', old_model, new_model)
+    logger.info('Renamed working model %s -> %s', old_model_resolved, new_model)
     return jsonify({'success': True, 'technical_name': new}), 200
 
 
@@ -552,7 +596,7 @@ def api_save_model():
     except ApiError as e:
         return jsonify({'success': False, 'error': e.message}), 400
     wstem = working_stem(tn)
-    if not os.path.isfile(model_json_path(wstem)):
+    if not os.path.isfile(resolved_model_json_path(wstem)):
         return jsonify({'success': False, 'error': 'no working copy; open or create the model first'}), 400
     supersede_stem = None
     raw_sup = data.get('supersede_technical_name')
@@ -569,35 +613,25 @@ def api_save_model():
             model_schema = json.load(f)
         with open('schemas/layout.json') as f:
             layout_schema = json.load(f)
-        with open(model_json_path(wstem), encoding='utf-8') as f:
+        with open(resolved_model_json_path(wstem), encoding='utf-8') as f:
             model_doc = json.load(f)
         if 'meta' not in model_doc:
             model_doc['meta'] = {}
         model_doc['meta']['modified'] = utc_iso_timestamp()
         jsonschema.validate(instance=model_doc, schema=model_schema)
-        layout_path_w = layout_json_path(wstem)
+        layout_path_w = resolved_layout_json_path(wstem)
         if os.path.isfile(layout_path_w):
             with open(layout_path_w, encoding='utf-8') as f:
                 layout_doc = json.load(f)
         else:
             layout_doc = {'layout': []}
         jsonschema.validate(instance=layout_doc, schema=layout_schema)
-        old_subdir = os.path.normpath(model_subdir_for_stem(wstem))
         new_subdir = os.path.normpath(os.path.join(MODELS_DIR, tn))
         os.makedirs(new_subdir, exist_ok=True)
         with open(model_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(model_doc, f, indent=4, ensure_ascii=False)
         with open(layout_json_path(tn), 'w', encoding='utf-8') as f:
             json.dump(layout_doc, f, indent=4, ensure_ascii=False)
-        if old_subdir != new_subdir:
-            w_model = os.path.join(old_subdir, f'{wstem}.json')
-            w_layout = os.path.join(old_subdir, f'layout_{wstem}.json')
-            dst_w_model = os.path.join(new_subdir, f'{wstem}.json')
-            dst_w_layout = os.path.join(new_subdir, f'layout_{wstem}.json')
-            if os.path.isfile(w_model) and os.path.normpath(w_model) != os.path.normpath(dst_w_model):
-                shutil.move(w_model, dst_w_model)
-            if os.path.isfile(w_layout) and os.path.normpath(w_layout) != os.path.normpath(dst_w_layout):
-                shutil.move(w_layout, dst_w_layout)
         logger.info('Saved model %s from working copy %s', tn, wstem)
         write_canonical_model_artifacts(model_doc, tn, png_bytes=png_bytes_optional)
         if supersede_stem:
@@ -653,7 +687,7 @@ def load_model(stem):
     with open('schemas/model.json') as f:
         schema = json.load(f)
         logger.info('Model schema loaded.')
-    path = model_json_path(stem)
+    path = resolved_model_json_path(stem)
     with open(path) as f:
         data = json.load(f)
         logger.info('Model data loaded: %s', path)
@@ -677,7 +711,7 @@ def load_layout(stem):
     with open('schemas/layout.json') as f:
         schema = json.load(f)
         logger.info('Layout schema loaded.')
-    path = layout_json_path(stem)
+    path = resolved_layout_json_path(stem)
     if not os.path.isfile(path):
         logger.info('No layout file for %s, returning empty layout.', stem)
         return jsonify({'layout': []})
@@ -726,7 +760,7 @@ def api_save_working_model():
 def api_export_model_csv():
     data = request.get_json(silent=True)
     path_stem = path_stem_from_envelope(data)
-    path = model_json_path(path_stem)
+    path = resolved_model_json_path(path_stem)
     with open(path, encoding='utf-8') as f:
         model_doc = json.load(f)
     with open('schemas/model.json') as f:
@@ -764,7 +798,7 @@ def api_export_model_csv():
 def api_export_model_ddl():
     data = request.get_json(silent=True)
     path_stem = path_stem_from_envelope(data)
-    path = model_json_path(path_stem)
+    path = resolved_model_json_path(path_stem)
     with open(path, encoding='utf-8') as f:
         model_doc = json.load(f)
     with open('schemas/model.json') as f:
@@ -811,7 +845,7 @@ def api_save_diagram_png():
     tn = parse_technical_name_field(data)
     png_bytes = decode_request_png_base64(data.get('png_base64'))
     wstem = working_stem(tn)
-    if not os.path.isfile(model_json_path(wstem)) and tn not in list_technical_names():
+    if not os.path.isfile(resolved_model_json_path(wstem)) and tn not in list_technical_names():
         raise ApiError('unknown model', 404)
     os.makedirs(os.path.join(MODELS_DIR, tn), exist_ok=True)
     out_path = diagram_png_path(tn)

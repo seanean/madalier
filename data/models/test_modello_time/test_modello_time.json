@@ -157,44 +157,17 @@
             "entity_id": "1fa91de1-a79b-4e8c-a4d9-3b40980e3f8f",
             "entity_type": "table",
             "technical_name": "regregergerg"
-        },
-        {
-            "attributes": [
-                {
-                    "attribute_id": "1a14c8f9-815f-4bbe-95ac-bf65153fdf1a",
-                    "attribute_order": 1,
-                    "business_name": "sdfsdfs",
-                    "data_type": "STRING",
-                    "definition": "",
-                    "key_type": null,
-                    "technical_name": "sdfsdfs"
-                },
-                {
-                    "attribute_id": "58275c40-1f4b-4cfa-b536-1a0034483cd1",
-                    "attribute_order": 2,
-                    "business_name": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz",
-                    "data_type": "STRING",
-                    "definition": "",
-                    "key_type": null,
-                    "technical_name": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
-                }
-            ],
-            "business_name": "sdfsewfefw",
-            "definition": "",
-            "entity_id": "47412b74-0e15-473b-a862-47153c34b629",
-            "entity_type": "table",
-            "technical_name": "sdfsewfefw"
         }
     ],
     "meta": {
         "created": "2026-03-26T20:49:25.004Z",
         "created_by": "John Doe",
         "description": "sample string",
-        "modified": "2026-04-09T06:39:39.743329Z",
+        "modified": "2026-04-09T06:53:39.347737Z",
         "name": "test modello time",
         "technical_name": "test_modello_time",
-        "version": "1.0.0",
-        "updated_by": "Sean"
+        "updated_by": "Sean",
+        "version": "1.0.0"
     },
     "relationships": [
         {

@@ -200,7 +200,7 @@ let layout = {};
 let positions = {};
 let nodes = [];
 let edges = [];
-/** Canonical meta.technical_name; on disk under data/models/&lt;technical_name&gt;/ (&lt;technical_name&gt;.json, layout_*, temp_* while editing). */
+/** Canonical meta.technical_name; on disk under data/models/&lt;technical_name&gt;/ (canonical JSON/CSV/PNG/DDL; working temp_* JSON under temp/ while editing). */
 let canonicalTechnicalName = null;
 /** When true, diagram entity/attribute labels use technical_name instead of business_name. */
 let showTechnicalNamesInDiagram = false;
@@ -1114,7 +1114,7 @@ function schedulePersistWorkingModel() {
     }, 450);
 }
 
-/** Persists in-memory `model` to data/models/&lt;technical_name&gt;/temp_&lt;technical_name&gt;.json. Returns whether the write succeeded. */
+/** Persists in-memory `model` to data/models/&lt;technical_name&gt;/temp/temp_&lt;technical_name&gt;.json. Returns whether the write succeeded. */
 async function persistWorkingModel() {
     if (!canonicalTechnicalName) return true;
     if (!(model.meta?.name ?? '').trim()) {
