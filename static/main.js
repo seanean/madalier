@@ -1718,7 +1718,12 @@ function refreshDiagramMetaStrip() {
     // if (tn) parts.push(`technical_name: ${tn}`);
     // if (cb) parts.push(`created_by: ${cb}`);
     // line1.textContent = parts.length ? parts.join(' · ') : canonicalTechnicalName;
-    line1.textContent = `created_by: ${(meta.created_by ?? '').trim()}`;
+    {
+        let line = `created_by: ${(meta.created_by ?? '').trim()}`;
+        const ub = (meta.updated_by ?? '').trim();
+        if (ub) line += ` · updated_by: ${ub}`;
+        line1.textContent = line;
+    }
     strip.appendChild(line1);
     const desc = (meta.description ?? '').trim();
     if (desc) {
@@ -1822,6 +1827,18 @@ function renderModelMetadataDetails() {
         refreshDiagramMetaStrip();
     });
     appendDetailsFormField(form, 'created_by', inpCreatedBy);
+
+    const inpUpdatedBy = document.createElement('input');
+    inpUpdatedBy.type = 'text';
+    inpUpdatedBy.value = meta.updated_by ?? '';
+    inpUpdatedBy.addEventListener('input', () => {
+        const v = inpUpdatedBy.value;
+        if (!v.trim()) delete meta.updated_by;
+        else meta.updated_by = v;
+        schedulePersistWorkingModel();
+        refreshDiagramMetaStrip();
+    });
+    appendDetailsFormField(form, 'updated_by', inpUpdatedBy);
 
     const taDesc = document.createElement('textarea');
     taDesc.rows = 4;

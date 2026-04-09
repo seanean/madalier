@@ -36,6 +36,10 @@
                 "created_by": {
                     "description": "Name of who created the data model.",
                     "type": "string"
+                },
+                "updated_by": {
+                    "description": "Name of who last updated the data model (optional).",
+                    "type": "string"
                 }
             },
             "required": [
