@@ -1,6 +1,6 @@
 # Madalier
 
-Madalier is a **local web app** for building and refining **logical data models**: entities, attributes, and relationships, with a **visual diagram**, **working copies** while you edit, and exports to **CSV** and **SQL DDL** for several databases. It is aimed at modelers and engineers who want a single place to capture structure and regenerate artifacts on disk.
+Madalier is a **local web app** for building and refining **logical data models**: entities, attributes, and relationships, with a **visual diagram**, **working copies** while you edit, and exports to **CSV** and **SQL DDL** for several databases. It is aimed at modellers and engineers who want a single place to capture structure and regenerate artifacts on disk.
 
 The stack is **Flask** (Python) plus static HTML/JS (**Cytoscape.js** for the diagram). Data lives under `data/` as JSON, CSV, PNG, and generated `.sql` files—no external database is required to run the app.
 
