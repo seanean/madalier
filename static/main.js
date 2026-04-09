@@ -29,6 +29,8 @@ const ATTR_TABLE_ROW_INNER_PAD = 12;
 const ATTR_OVERLAY_ROW_REF_PX = ROW_H;
 /** Floor for overlay font size (px) when zoomed far out. */
 const ATTR_OVERLAY_FONT_MIN_PX = 5;
+/** Cytoscape scroll-wheel zoom multiplier; default in the library is 1 (lower = finer steps). */
+const CY_WHEEL_SENSITIVITY = 0.5;
 
 let _measureLabelCanvas;
 function measureLabelWidth(text) {
@@ -2163,6 +2165,7 @@ function renderCy() {
     clearDiagramOverlays();
     cy = cytoscape({
         container: document.getElementById('cy'),
+        wheelSensitivity: CY_WHEEL_SENSITIVITY,
         elements: {
             nodes: nodes,
             edges: edges
