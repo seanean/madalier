@@ -727,6 +727,12 @@
                 <input type="text" id="add-attribute-scale" name="scale" inputmode="numeric" autocomplete="off"
                     maxlength="10" placeholder="Decimal places (optional)">
             </div>
+            <div id="add-attribute-string-fields" hidden>
+                <label for="add-attribute-length">Length</label>
+                <input type="text" id="add-attribute-length" name="length" inputmode="numeric" autocomplete="off"
+                    maxlength="10"
+                    placeholder="Optional for STRING/VARCHAR (empty = unbounded in DDL)">
+            </div>
             <label for="add-attribute-key-type">Key type</label>
             <select id="add-attribute-key-type" name="key_type">
                 <option value="" selected>(none)</option>

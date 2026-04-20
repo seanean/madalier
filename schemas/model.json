@@ -114,10 +114,11 @@
                                             "type": "boolean"
                                         },
                                         "data_type": {
-                                            "description": "Data type of the attribute, options: [STRING, TEXT, INTEGER, BIGINT, SMALLINT, DECIMAL, FLOAT, BOOLEAN, DATE, TIMESTAMP, BINARY]",
+                                            "description": "Logical data type; STRING/VARCHAR without length map to unbounded text in DDL; with length they map to VARCHAR(n) / NVARCHAR(n) per dialect.",
                                             "type": "string",
                                             "enum": [
                                                 "STRING",
+                                                "VARCHAR",
                                                 "TEXT",
                                                 "INTEGER",
                                                 "BIGINT",
@@ -127,6 +128,7 @@
                                                 "BOOLEAN",
                                                 "DATE",
                                                 "TIMESTAMP",
+                                                "TIMESTAMPTZ",
                                                 "BINARY"
                                             ]
                                         },
@@ -137,6 +139,11 @@
                                         "scale": {
                                             "description": "Numeric scale for DECIMAL data type (digits after decimal point).",
                                             "type": "integer"
+                                        },
+                                        "length": {
+                                            "description": "Optional max length for STRING and VARCHAR (maps to VARCHAR(n) / NVARCHAR(n) per dialect when set).",
+                                            "type": "integer",
+                                            "minimum": 1
                                         },
                                         "key_type": {
                                             "description": "Key classification of the attribute.",

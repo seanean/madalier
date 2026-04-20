@@ -2,7 +2,8 @@
 Generate per-entity DDL .sql files for multiple SQL dialects from a Madalier model document.
 
 Public entry point: write_model_ddls(). Dialects and variants are defined by DIALECTS and
-DDL_VARIANTS; logical types map to physical SQL in _LOGICAL_TYPES.
+DDL_VARIANTS; logical types map to physical SQL in _LOGICAL_TYPES (STRING/VARCHAR use length when set,
+otherwise the same unbounded mapping as TEXT).
 """
 
 from __future__ import annotations
@@ -17,16 +18,9 @@ DIALECTS = ('sqlite', 'mysql', 'postgres', 'snowflake', 'mssql', 'databricks')
 # full: primary keys + inline FKs from relationships; simple: columns, types, NULL/NOT NULL only
 DDL_VARIANTS = ('full', 'simple')
 
-# logical data_type -> dialect -> SQL type (None means DECIMAL with p,s per dialect template)
+# logical data_type -> dialect -> SQL type (None means DECIMAL with p,s per dialect template).
+# STRING is handled specially in _physical_type_for_attribute (length or unbounded TEXT-like).
 _LOGICAL_TYPES: dict[str, dict[str, str | None]] = {
-    'STRING': {
-        'mysql': 'VARCHAR(255)',
-        'postgres': 'VARCHAR(255)',
-        'sqlite': 'TEXT',
-        'mssql': 'NVARCHAR(255)',
-        'snowflake': 'VARCHAR(255)',
-        'databricks': 'STRING',
-    },
     'TEXT': {
         'mysql': 'TEXT',
         'postgres': 'TEXT',
@@ -99,6 +93,14 @@ _LOGICAL_TYPES: dict[str, dict[str, str | None]] = {
         'snowflake': 'TIMESTAMP_NTZ',
         'databricks': 'TIMESTAMP',
     },
+    'TIMESTAMPTZ': {
+        'mysql': 'TIMESTAMP',
+        'postgres': 'TIMESTAMPTZ',
+        'sqlite': 'TEXT',
+        'mssql': 'DATETIMEOFFSET',
+        'snowflake': 'TIMESTAMP_TZ',
+        'databricks': 'TIMESTAMP',
+    },
     'BINARY': {
         'mysql': 'BLOB',
         'postgres': 'BYTEA',
@@ -108,6 +110,36 @@ _LOGICAL_TYPES: dict[str, dict[str, str | None]] = {
         'databricks': 'BINARY',
     },
 }
+
+def _varchar_sql(dialect: str, n: int) -> str:
+    """Logical STRING/VARCHAR with explicit max length."""
+    if n < 1:
+        raise DdlExportError(f'length must be >= 1, got {n!r}')
+    if dialect == 'mysql':
+        return f'VARCHAR({n})'
+    if dialect == 'postgres':
+        return f'VARCHAR({n})'
+    if dialect == 'sqlite':
+        return f'VARCHAR({n})'
+    if dialect == 'mssql':
+        return f'NVARCHAR({n})'
+    if dialect == 'snowflake':
+        return f'VARCHAR({n})'
+    if dialect == 'databricks':
+        return f'VARCHAR({n})'
+    raise DdlExportError(f'unknown dialect: {dialect!r}')
+
+
+def _string_unbounded_sql(dialect: str) -> str:
+    """STRING with no length: unbounded text / large string (no implicit VARCHAR(255))."""
+    row = _LOGICAL_TYPES.get('TEXT')
+    if not row:
+        raise DdlExportError('internal: TEXT logical type missing')
+    spec = row.get(dialect)
+    if spec is None:
+        raise DdlExportError(f'unknown dialect: {dialect!r}')
+    return spec
+
 
 _DECIMAL_SQL = {
     'mysql': 'DECIMAL({p},{s})',
@@ -142,10 +174,17 @@ def quote_ident(name: str, dialect: str) -> str:
 
 
 def _physical_type_for_attribute(attr: dict[str, Any], dialect: str) -> str:
-    """Map model data_type (+ precision/scale for DECIMAL) to dialect-specific SQL type."""
+    """Map model data_type (+ precision/scale for DECIMAL; length for STRING/VARCHAR) to SQL."""
     dt = attr.get('data_type')
     if not isinstance(dt, str):
         raise DdlExportError('attribute missing data_type')
+
+    if dt == 'STRING' or dt == 'VARCHAR':
+        length = attr.get('length')
+        if isinstance(length, int) and length >= 1:
+            return _varchar_sql(dialect, length)
+        return _string_unbounded_sql(dialect)
+
     row = _LOGICAL_TYPES.get(dt)
     if not row:
         raise DdlExportError(f'unknown data_type: {dt!r}')

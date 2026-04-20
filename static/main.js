@@ -234,9 +234,25 @@ let diagramOverlayRaf = null;
 const SCHEMA_ENTITY_TYPES = ['view', 'table'];
 /** Matches schemas/model.json attributes.items.properties.data_type.enum */
 const SCHEMA_DATA_TYPES = [
-    'STRING', 'TEXT', 'INTEGER', 'BIGINT', 'SMALLINT', 'DECIMAL', 'FLOAT',
-    'BOOLEAN', 'DATE', 'TIMESTAMP', 'BINARY',
+    'STRING',
+    'VARCHAR',
+    'TEXT',
+    'INTEGER',
+    'BIGINT',
+    'SMALLINT',
+    'DECIMAL',
+    'FLOAT',
+    'BOOLEAN',
+    'DATE',
+    'TIMESTAMP',
+    'TIMESTAMPTZ',
+    'BINARY',
 ];
+
+function attributeDataTypeUsesLength(dt) {
+    return dt === 'STRING' || dt === 'VARCHAR';
+}
+
 /** Matches schemas/model.json key_type.enum (null = none) */
 const SCHEMA_KEY_TYPES = ['PRIMARY', 'FOREIGN', 'NATURAL'];
 /** schemas/model.json parent_cardinality / child_cardinality.enum */
@@ -393,6 +409,8 @@ function metaTemplateFieldToAttribute(field, order) {
     if (field.data_type === 'DECIMAL') {
         if (typeof field.precision === 'number') attr.precision = field.precision;
         if (typeof field.scale === 'number') attr.scale = field.scale;
+    } else if (attributeDataTypeUsesLength(field.data_type)) {
+        if (typeof field.length === 'number') attr.length = field.length;
     }
     return attr;
 }
@@ -485,11 +503,14 @@ function syncMetaTemplateToAllTables() {
                 if (f.source_mapping) attr.source_mapping = f.source_mapping;
                 else delete attr.source_mapping;
                 clearPrecisionScaleUnlessDecimal(attr);
+                clearLengthUnlessStringLike(attr);
                 if (f.data_type === 'DECIMAL') {
                     if (typeof f.precision === 'number') attr.precision = f.precision;
                     else delete attr.precision;
                     if (typeof f.scale === 'number') attr.scale = f.scale;
                     else delete attr.scale;
+                } else if (attributeDataTypeUsesLength(f.data_type)) {
+                    if (typeof f.length === 'number') attr.length = f.length;
                 }
                 attr.key_type = null;
             }
@@ -557,6 +578,7 @@ function cloneMetaFieldRow(f) {
         mandatory: f.mandatory === true,
         precision: typeof f.precision === 'number' ? f.precision : undefined,
         scale: typeof f.scale === 'number' ? f.scale : undefined,
+        length: typeof f.length === 'number' ? f.length : undefined,
         definition: f.definition ?? '',
         source_mapping: f.source_mapping ?? '',
     };
@@ -738,6 +760,20 @@ function renderManageMetaFieldsList() {
             row.append(labP, inpP, labS, inpS);
         }
 
+        if (attributeDataTypeUsesLength(field.data_type)) {
+            const labLen = document.createElement('label');
+            labLen.textContent = 'Length (optional; omit for unbounded type in DDL)';
+            const inpLen = document.createElement('input');
+            inpLen.type = 'text';
+            inpLen.inputMode = 'numeric';
+            inpLen.value =
+                field.length !== undefined && field.length !== null ? String(field.length) : '';
+            inpLen.addEventListener('input', () => {
+                parseOptionalIntField(manageMetaDraft[idx], 'length', inpLen.value);
+            });
+            row.append(labLen, inpLen);
+        }
+
         list.appendChild(row);
     });
 }
@@ -798,6 +834,9 @@ async function saveManageMetaFieldsFromDialog() {
             if (f.data_type === 'DECIMAL') {
                 if (typeof f.precision === 'number') o.precision = f.precision;
                 if (typeof f.scale === 'number') o.scale = f.scale;
+            }
+            if (attributeDataTypeUsesLength(f.data_type) && typeof f.length === 'number') {
+                o.length = f.length;
             }
             return o;
         }),
@@ -1865,6 +1904,12 @@ function clearPrecisionScaleUnlessDecimal(attr) {
     }
 }
 
+function clearLengthUnlessStringLike(attr) {
+    if (!attributeDataTypeUsesLength(attr.data_type)) {
+        delete attr.length;
+    }
+}
+
 function sortedEntityAttributes(ent) {
     const attrs = [...(ent.attributes || [])];
     attrs.sort((a, b) => {
@@ -1897,6 +1942,7 @@ function swapAttributeOrderWithNeighbor(attr, direction) {
 
 function renderAttributeDetails(attr) {
     clearPrecisionScaleUnlessDecimal(attr);
+    clearLengthUnlessStringLike(attr);
 
     const shell = beginDetailsPane('Attribute');
     if (!shell) return;
@@ -1964,11 +2010,30 @@ function renderAttributeDetails(attr) {
     selData.addEventListener('change', () => {
         attr.data_type = selData.value;
         clearPrecisionScaleUnlessDecimal(attr);
+        clearLengthUnlessStringLike(attr);
         applyAttributeNodeDataInCy(attr);
         schedulePersistWorkingModel();
         renderAttributeDetails(attr);
     });
     appendDetailsFormField(form, 'data_type', selData);
+
+    if (attributeDataTypeUsesLength(attr.data_type)) {
+        const inpLen = document.createElement('input');
+        inpLen.type = 'text';
+        inpLen.inputMode = 'numeric';
+        inpLen.value =
+            attr.length !== undefined && attr.length !== null ? String(attr.length) : '';
+        inpLen.addEventListener('input', () => {
+            parseOptionalIntField(attr, 'length', inpLen.value);
+            applyAttributeNodeDataInCy(attr);
+            schedulePersistWorkingModel();
+        });
+        appendDetailsFormField(
+            form,
+            'length (optional — empty uses unbounded type in DDL)',
+            inpLen,
+        );
+    }
 
     if (attr.data_type === 'DECIMAL') {
         const inpPrec = document.createElement('input');
@@ -3191,17 +3256,24 @@ function initAddAttributeDataTypeSelect() {
     }
 }
 
-function syncAddAttributeDecimalFieldsVisibility() {
+function syncAddAttributeDataTypeAuxiliaryFields() {
     const sel = document.getElementById('add-attribute-data-type');
-    const wrap = document.getElementById('add-attribute-decimal-fields');
-    if (!wrap) return;
-    const isDec = sel?.value === 'DECIMAL';
-    wrap.hidden = !isDec;
+    const decWrap = document.getElementById('add-attribute-decimal-fields');
+    const strWrap = document.getElementById('add-attribute-string-fields');
+    const dt = sel?.value ?? '';
+    const isDec = dt === 'DECIMAL';
+    const isStr = attributeDataTypeUsesLength(dt);
+    if (decWrap) decWrap.hidden = !isDec;
+    if (strWrap) strWrap.hidden = !isStr;
     if (!isDec) {
         const p = document.getElementById('add-attribute-precision');
         const s = document.getElementById('add-attribute-scale');
         if (p) p.value = '';
         if (s) s.value = '';
+    }
+    if (!isStr) {
+        const l = document.getElementById('add-attribute-length');
+        if (l) l.value = '';
     }
 }
 
@@ -3278,7 +3350,7 @@ function resetAddAttributeForm() {
     const form = document.getElementById('add-attribute-form');
     form?.reset();
     initAddAttributeDataTypeSelect();
-    syncAddAttributeDecimalFieldsVisibility();
+    syncAddAttributeDataTypeAuxiliaryFields();
 }
 
 function openAddAttributeDialog() {
@@ -3294,7 +3366,7 @@ function openAddAttributeDialog() {
     const bizInp = document.getElementById('add-attribute-business-name');
     if (bizInp) bizInp.oninput = () => syncAddAttributeTechnicalPreview();
     syncAddAttributeTechnicalPreview();
-    syncAddAttributeDecimalFieldsVisibility();
+    syncAddAttributeDataTypeAuxiliaryFields();
     document.getElementById('add-attribute-dialog')?.showModal();
     queueMicrotask(() => document.getElementById('add-attribute-business-name')?.focus());
 }
@@ -3351,6 +3423,17 @@ function submitAddAttribute(ev) {
         const scaleRaw = document.getElementById('add-attribute-scale')?.value ?? '';
         parseOptionalIntField(newAttr, 'precision', precRaw);
         parseOptionalIntField(newAttr, 'scale', scaleRaw);
+    }
+    if (attributeDataTypeUsesLength(dataType)) {
+        const lenRaw = document.getElementById('add-attribute-length')?.value ?? '';
+        parseOptionalIntField(newAttr, 'length', lenRaw);
+        if (
+            typeof newAttr.length === 'number' &&
+            (!Number.isInteger(newAttr.length) || newAttr.length < 1)
+        ) {
+            alert('Length must be a positive integer.');
+            return;
+        }
     }
     if (!ent.attributes) ent.attributes = [];
     ent.attributes.push(newAttr);
@@ -3845,8 +3928,10 @@ document.getElementById('export-ddl-btn')?.addEventListener('click', () => void 
 // --- Startup: wire DOM controls and load naming config ---
 
 initAddAttributeDataTypeSelect();
-syncAddAttributeDecimalFieldsVisibility();
-document.getElementById('add-attribute-data-type')?.addEventListener('change', syncAddAttributeDecimalFieldsVisibility);
+syncAddAttributeDataTypeAuxiliaryFields();
+document
+    .getElementById('add-attribute-data-type')
+    ?.addEventListener('change', syncAddAttributeDataTypeAuxiliaryFields);
 syncAddRelationshipButtonState();
 syncRemoveSelectedButtonState();
 syncShowTechnicalNamesButton();
