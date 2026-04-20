@@ -397,6 +397,32 @@ function metaTemplateFieldToAttribute(field, order) {
     return attr;
 }
 
+/**
+ * Assign consecutive attribute_order to meta attributes in template order, after every non-meta
+ * attribute (so diagram stacking matches the meta field manager list).
+ */
+function reorderMetaAttributesToMatchTemplate(ent, templateFields) {
+    if (ent.entity_type !== 'table') return;
+    const attrs = ent.attributes || [];
+    let base = 0;
+    for (const a of attrs) {
+        if (a.is_meta === true) continue;
+        const o = Number(a.attribute_order);
+        if (Number.isFinite(o) && o > base) base = o;
+    }
+    const metaByTn = new Map();
+    for (const a of attrs) {
+        if (a.is_meta === true && a.technical_name) metaByTn.set(a.technical_name, a);
+    }
+    let order = base;
+    for (const f of templateFields) {
+        const attr = metaByTn.get(f.technical_name);
+        if (!attr) continue;
+        order += 1;
+        attr.attribute_order = order;
+    }
+}
+
 /** Add missing meta attributes from the effective template; returns an error message or null. */
 function applyMetaFieldsToTable(ent) {
     const fields = effectiveMetaConfigState.config?.fields || [];
@@ -470,6 +496,7 @@ function syncMetaTemplateToAllTables() {
         }
         const err = applyMetaFieldsToTable(ent);
         if (err) return err;
+        reorderMetaAttributesToMatchTemplate(ent, fields);
     }
     return null;
 }
@@ -535,6 +562,36 @@ function cloneMetaFieldRow(f) {
     };
 }
 
+/** Unique lower_snake_case technical id among other rows in the manage-meta dialog (matches API SCHEMA). */
+function ensureUniqueMetaFieldTechnicalNameAmongDraft(base, excludeIndex) {
+    const taken = new Set();
+    for (let i = 0; i < manageMetaDraft.length; i++) {
+        if (i === excludeIndex) continue;
+        const tn = String(manageMetaDraft[i]?.technical_name ?? '').trim();
+        if (tn) taken.add(tn);
+    }
+    let b = base || 'unnamed';
+    if (!TECHNICAL_NAME_RE.test(b)) b = 'unnamed';
+    if (!taken.has(b)) return b;
+    for (let n = 2; n < 10000; n++) {
+        const c = `${b}_${n}`;
+        if (!taken.has(c)) return c;
+    }
+    return `${b}_${Date.now()}`;
+}
+
+/**
+ * Meta template technical_name from business name: same rules as model folder names
+ * (naming config + ASCII lower_snake_case), unique within the current draft row.
+ */
+function derivedMetaFieldTechnicalNameForDraftRow(businessName, excludeIndex) {
+    const raw = String(businessName ?? '').trim();
+    if (!raw) return '';
+    const stem = deriveModelTechnicalNameFromDisplayName(raw);
+    const base = stem && TECHNICAL_NAME_RE.test(stem) ? stem : 'unnamed';
+    return ensureUniqueMetaFieldTechnicalNameAmongDraft(base, excludeIndex);
+}
+
 function renderManageMetaFieldsList() {
     const list = document.getElementById('manage-meta-fields-list');
     if (!list) return;
@@ -552,17 +609,19 @@ function renderManageMetaFieldsList() {
         inpBiz.autocomplete = 'off';
         inpBiz.addEventListener('input', () => {
             manageMetaDraft[idx].business_name = inpBiz.value;
+            const next = derivedMetaFieldTechnicalNameForDraftRow(inpBiz.value, idx);
+            manageMetaDraft[idx].technical_name = next;
+            inpTech.value = next;
         });
 
         const labTech = document.createElement('label');
         labTech.textContent = 'Technical name';
         const inpTech = document.createElement('input');
         inpTech.type = 'text';
+        inpTech.readOnly = true;
         inpTech.value = field.technical_name;
         inpTech.autocomplete = 'off';
-        inpTech.addEventListener('input', () => {
-            manageMetaDraft[idx].technical_name = inpTech.value.trim();
-        });
+        inpTech.title = 'Derived from business name and naming config';
 
         const labDt = document.createElement('label');
         labDt.textContent = 'Data type';
