@@ -1,0 +1,28 @@
+entity_type,entity_business_name,entity_technical_name,entity_definition,attribute_business_name,attribute_technical_name,mandatory,data_type,precision,scale,length,attribute_definition,source_mapping,is_meta
+table,Shipment,shipment,,Shipment Universal Unique Identifier,shipment_uuid,true,VARCHAR,,,,,,
+table,Shipment,shipment,,Shipment Business Identifier,shipment_business_id,true,VARCHAR,,,,,,
+table,Shipment,shipment,,Shipment Technical Identifier,shipment_technical_id,true,VARCHAR,,,,,,
+table,Shipment,shipment,,Shipment Type,shipment_type,true,VARCHAR,,,,,,
+table,Shipment,shipment,,Meta Source Event Names,meta_source_event_names,true,VARCHAR,,,,,,true
+table,Shipment,shipment,,Meta Source Event Identifier List,meta_source_event_id_lst,true,VARCHAR,,,,,,true
+table,Shipment,shipment,,Meta Source File Path List,meta_source_file_path_lst,true,VARCHAR,,,,,,true
+table,Shipment,shipment,,Meta Insert Timestamp,meta_insert_timestamp,true,TIMESTAMPTZ,,,,,,true
+table,Shipment,shipment,,Meta Updated Timestamp,meta_updated_timestamp,,TIMESTAMPTZ,,,,,,true
+table,Shipment Product,shipment_product,,Shipment Product Universal Unique Identifier,shipment_product_uuid,true,VARCHAR,,,,,,
+table,Shipment Product,shipment_product,,Shipment Universal Unique Identifier,shipment_uuid,true,VARCHAR,,,,,,
+table,Shipment Product,shipment_product,,Product Identifier,product_id,true,VARCHAR,,,,,,
+table,Shipment Product,shipment_product,,Product Quantity,product_qty,true,INTEGER,,,,,,
+table,Shipment Product,shipment_product,,Meta Source Event Names,meta_source_event_names,true,VARCHAR,,,,,,true
+table,Shipment Product,shipment_product,,Meta Source Event Identifier List,meta_source_event_id_lst,true,VARCHAR,,,,,,true
+table,Shipment Product,shipment_product,,Meta Source File Path List,meta_source_file_path_lst,true,VARCHAR,,,,,,true
+table,Shipment Product,shipment_product,,Meta Insert Timestamp,meta_insert_timestamp,true,TIMESTAMPTZ,,,,,,true
+table,Shipment Product,shipment_product,,Meta Updated Timestamp,meta_updated_timestamp,,TIMESTAMPTZ,,,,,,true
+table,Shipment Status,shipment_status,,Shipment Status Universal Unique Identifier,shipment_status_uuid,true,VARCHAR,,,,,,
+table,Shipment Status,shipment_status,,Shipment Universal Unique Identifier,shipment_uuid,true,VARCHAR,,,,,,
+table,Shipment Status,shipment_status,,Shipment Status,shipment_status,true,VARCHAR,,,,,,
+table,Shipment Status,shipment_status,,Shipment Status Timestamp,shipment_status_tmst,true,TIMESTAMPTZ,,,,,,
+table,Shipment Status,shipment_status,,Meta Source Event Names,meta_source_event_names,true,VARCHAR,,,,,,true
+table,Shipment Status,shipment_status,,Meta Source Event Identifier List,meta_source_event_id_lst,true,VARCHAR,,,,,,true
+table,Shipment Status,shipment_status,,Meta Source File Path List,meta_source_file_path_lst,true,VARCHAR,,,,,,true
+table,Shipment Status,shipment_status,,Meta Insert Timestamp,meta_insert_timestamp,true,TIMESTAMPTZ,,,,,,true
+table,Shipment Status,shipment_status,,Meta Updated Timestamp,meta_updated_timestamp,,TIMESTAMPTZ,,,,,,true

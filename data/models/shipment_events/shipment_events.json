@@ -1,0 +1,336 @@
+{
+    "entities": [
+        {
+            "attributes": [
+                {
+                    "attribute_id": "a32a5cad-e321-48f1-9ca8-e395860cd405",
+                    "attribute_order": 1,
+                    "business_name": "Shipment Universal Unique Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "PRIMARY",
+                    "mandatory": true,
+                    "technical_name": "shipment_uuid"
+                },
+                {
+                    "attribute_id": "3c877f98-e1d7-4441-b0c1-af849477bad3",
+                    "attribute_order": 2,
+                    "business_name": "Shipment Business Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "NATURAL",
+                    "mandatory": true,
+                    "technical_name": "shipment_business_id"
+                },
+                {
+                    "attribute_id": "1766b971-5fe3-429d-81e8-5d6f2ce406bf",
+                    "attribute_order": 3,
+                    "business_name": "Shipment Technical Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": null,
+                    "mandatory": true,
+                    "technical_name": "shipment_technical_id"
+                },
+                {
+                    "attribute_id": "a738eca4-4ccf-4441-8104-d22868553a38",
+                    "attribute_order": 4,
+                    "business_name": "Shipment Type",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": null,
+                    "mandatory": true,
+                    "technical_name": "shipment_type"
+                },
+                {
+                    "attribute_id": "2df6a271-3911-4685-b164-f2c4dee705a1",
+                    "business_name": "Meta Source Event Names",
+                    "technical_name": "meta_source_event_names",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 5,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "05e7d615-f295-4fba-9228-b6945fabe642",
+                    "business_name": "Meta Source Event Identifier List",
+                    "technical_name": "meta_source_event_id_lst",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 6,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "2ad187f7-e663-4fce-b4ce-a37cec9c431d",
+                    "business_name": "Meta Source File Path List",
+                    "technical_name": "meta_source_file_path_lst",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 7,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "a5272cd4-cb8e-40be-8bc8-bbcb26b4bf52",
+                    "business_name": "Meta Insert Timestamp",
+                    "technical_name": "meta_insert_timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "attribute_order": 8,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "dd7549fd-20c4-4b9a-93dc-0659bdc56d4d",
+                    "business_name": "Meta Updated Timestamp",
+                    "technical_name": "meta_updated_timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "attribute_order": 9,
+                    "is_meta": true,
+                    "key_type": null
+                }
+            ],
+            "business_name": "Shipment",
+            "definition": "",
+            "entity_id": "8ded130c-6a74-4e06-ad5a-465f5a8a628d",
+            "entity_type": "table",
+            "technical_name": "shipment"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "9c223fc9-4365-4723-98b9-392f3224e582",
+                    "attribute_order": 1,
+                    "business_name": "Shipment Product Universal Unique Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "PRIMARY",
+                    "mandatory": true,
+                    "technical_name": "shipment_product_uuid"
+                },
+                {
+                    "attribute_id": "f08403dc-0d9e-43da-9a45-eeae24c1ae14",
+                    "attribute_order": 2,
+                    "business_name": "Shipment Universal Unique Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "FOREIGN",
+                    "mandatory": true,
+                    "technical_name": "shipment_uuid"
+                },
+                {
+                    "attribute_id": "028c2498-15ef-4dbd-b4d8-f078bb2caf06",
+                    "attribute_order": 3,
+                    "business_name": "Product Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "NATURAL",
+                    "mandatory": true,
+                    "technical_name": "product_id"
+                },
+                {
+                    "attribute_id": "522ea304-3c1a-4492-a92e-6af44c4218a1",
+                    "attribute_order": 4,
+                    "business_name": "Product Quantity",
+                    "data_type": "INTEGER",
+                    "definition": "",
+                    "key_type": null,
+                    "mandatory": true,
+                    "technical_name": "product_qty"
+                },
+                {
+                    "attribute_id": "423fef7c-03ed-4745-be09-bad9ebfa37ff",
+                    "business_name": "Meta Source Event Names",
+                    "technical_name": "meta_source_event_names",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 5,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "2a44699d-698a-43c8-b42c-80caf9e06d29",
+                    "business_name": "Meta Source Event Identifier List",
+                    "technical_name": "meta_source_event_id_lst",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 6,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "f700a011-dfc5-47d5-9ea2-6cd7c8550e65",
+                    "business_name": "Meta Source File Path List",
+                    "technical_name": "meta_source_file_path_lst",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 7,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "98cd0146-7f7f-4274-bdc7-23fdfe5017d3",
+                    "business_name": "Meta Insert Timestamp",
+                    "technical_name": "meta_insert_timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "attribute_order": 8,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "f08e2321-27d5-42ca-8a68-d445cfd6ae07",
+                    "business_name": "Meta Updated Timestamp",
+                    "technical_name": "meta_updated_timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "attribute_order": 9,
+                    "is_meta": true,
+                    "key_type": null
+                }
+            ],
+            "business_name": "Shipment Product",
+            "definition": "",
+            "entity_id": "a1e51eee-9db7-4768-b3ba-39e5584d474e",
+            "entity_type": "table",
+            "technical_name": "shipment_product"
+        },
+        {
+            "attributes": [
+                {
+                    "attribute_id": "79d27a83-a85d-48a0-9cd5-2e2d7df2c4f6",
+                    "attribute_order": 1,
+                    "business_name": "Shipment Status Universal Unique Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "PRIMARY",
+                    "mandatory": true,
+                    "technical_name": "shipment_status_uuid"
+                },
+                {
+                    "attribute_id": "78ee1a84-ca95-4d28-b0c1-abf49b9ba8f5",
+                    "attribute_order": 2,
+                    "business_name": "Shipment Universal Unique Identifier",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "FOREIGN",
+                    "mandatory": true,
+                    "technical_name": "shipment_uuid"
+                },
+                {
+                    "attribute_id": "3295bd64-7f74-4ea9-a797-ae116f9c3b72",
+                    "attribute_order": 3,
+                    "business_name": "Shipment Status",
+                    "data_type": "VARCHAR",
+                    "definition": "",
+                    "key_type": "NATURAL",
+                    "mandatory": true,
+                    "technical_name": "shipment_status"
+                },
+                {
+                    "attribute_id": "6fc6eaa2-882c-4bbf-b8ab-f2c7aea7eba5",
+                    "attribute_order": 4,
+                    "business_name": "Shipment Status Timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "definition": "",
+                    "key_type": null,
+                    "mandatory": true,
+                    "technical_name": "shipment_status_tmst"
+                },
+                {
+                    "attribute_id": "d0f2c6c0-6440-4f9e-af6f-e612fce44ead",
+                    "business_name": "Meta Source Event Names",
+                    "technical_name": "meta_source_event_names",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 5,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "cedbae87-b0c4-44e3-8a47-059ba6a88691",
+                    "business_name": "Meta Source Event Identifier List",
+                    "technical_name": "meta_source_event_id_lst",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 6,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "545125fa-3b73-40b3-8c90-df167cfcad21",
+                    "business_name": "Meta Source File Path List",
+                    "technical_name": "meta_source_file_path_lst",
+                    "data_type": "VARCHAR",
+                    "attribute_order": 7,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "1cd7aa1f-4f2a-4f99-bf75-6858f996b360",
+                    "business_name": "Meta Insert Timestamp",
+                    "technical_name": "meta_insert_timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "attribute_order": 8,
+                    "is_meta": true,
+                    "key_type": null,
+                    "mandatory": true
+                },
+                {
+                    "attribute_id": "740a14eb-b862-48d2-b6cd-a94830c786ac",
+                    "business_name": "Meta Updated Timestamp",
+                    "technical_name": "meta_updated_timestamp",
+                    "data_type": "TIMESTAMPTZ",
+                    "attribute_order": 9,
+                    "is_meta": true,
+                    "key_type": null
+                }
+            ],
+            "business_name": "Shipment Status",
+            "definition": "",
+            "entity_id": "5a80c090-cc11-419f-b0dc-443c72b0857d",
+            "entity_type": "table",
+            "technical_name": "shipment_status"
+        }
+    ],
+    "meta": {
+        "created": "2026-04-09T12:36:24.760936Z",
+        "created_by": "Sean Murphy",
+        "description": "Curated, silver-layer model for shipment events.",
+        "modified": "2026-04-20T16:48:04.927942Z",
+        "name": "Shipment Events",
+        "technical_name": "shipment_events",
+        "version": "0.0.3"
+    },
+    "meta_fields_enabled": true,
+    "relationships": [
+        {
+            "cardinality": "1..1 : 0..*",
+            "child_attribute_id": "9c223fc9-4365-4723-98b9-392f3224e582",
+            "child_cardinality": "Many",
+            "child_entity_id": "a1e51eee-9db7-4768-b3ba-39e5584d474e",
+            "child_mandatory": false,
+            "parent_attribute_id": "a32a5cad-e321-48f1-9ca8-e395860cd405",
+            "parent_cardinality": "One",
+            "parent_entity_id": "8ded130c-6a74-4e06-ad5a-465f5a8a628d",
+            "parent_mandatory": true,
+            "relationship_id": "6deecb42-c718-4a7f-9830-04b308e814ee",
+            "relationship_name": "shipment.shipment_uuid 1..1 : 0..* shipment_products.shipment_product_uuid"
+        },
+        {
+            "cardinality": "1..1 : 0..*",
+            "child_attribute_id": "79d27a83-a85d-48a0-9cd5-2e2d7df2c4f6",
+            "child_cardinality": "Many",
+            "child_entity_id": "5a80c090-cc11-419f-b0dc-443c72b0857d",
+            "child_mandatory": false,
+            "parent_attribute_id": "a32a5cad-e321-48f1-9ca8-e395860cd405",
+            "parent_cardinality": "One",
+            "parent_entity_id": "8ded130c-6a74-4e06-ad5a-465f5a8a628d",
+            "parent_mandatory": true,
+            "relationship_id": "eb3bdf55-158e-4417-9c71-fbcf673d6bfa",
+            "relationship_name": "shipment.shipment_uuid 1..1 : 0..* shipment_status.shipment_status_uuid"
+        }
+    ]
+}
